@@ -1,0 +1,14 @@
+﻿5 pruebas automáticas aprobadas: cobertura, ausencias, redondeo, fuentes unificadas/separadas rechazo de superposición y clave OP-X por socio/subrecibo, con y sin recibo global.
+Lectura independiente XLSX (openpyxl):
+{
+  "filas": 237293,
+  "filas_tipo_OP-X": 9139,
+  "total_SGA": "68360594378.94",
+  "total_ERP": "68313722439.49",
+  "comparacion_importes": "TODOS IGUALES AL RESULTADO 1.3",
+  "hojas": [
+    "Resumen",
+    "Conciliación general"
+  ]
+}
+No se ejecutó Microsoft Excel en este entorno.

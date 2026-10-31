@@ -1,0 +1,114 @@
+CONTROLES INTERNOS SGA - VERSION 1.5
+Actualizacion 22/10/2026
+
+COMO USAR
+1. Extraer TODO el ZIP en una carpeta nueva.
+2. Pegar UN reporte completo SGA .xlsx dentro de ENTRADA.
+   No hace falta cambiar el nombre ni el numero de descarga.
+3. Abrir EJECUTAR_CONTROL.bat con doble clic (Windows).
+4. Confirmar la fecha de corte: Enter acepta la fecha de hoy.
+   Para otro cierre, escribir la fecha AAAA-MM-DD y presionar Enter.
+5. Buscar los seis Excel en SALIDA, dentro de una carpeta por ejecucion.
+
+Si ENTRADA esta vacia o tiene mas de un Excel, el programa lo informa.
+Los archivos temporales de Excel (~$...) se ignoran.
+Se necesita Python 3.10 o posterior, sin paquetes adicionales.
+Mantener control_sga.py y excel_sga.py juntos.
+El reporte de entrada se conserva y los resultados anteriores tambien.
+Los resultados_prueba son ejemplos generados con la version 1.4 y corte
+2026-10-16; la version 1.5 cambia solamente la forma de iniciar el proceso.
+La conciliacion SGA-ERP sigue siendo un proceso independiente.
+
+Desde terminal se puede indicar un archivo y una fecha explicitamente:
+  py control_sga.py "C:\carpeta\reporte.xlsx" --corte 2026-10-31
+
+LAS SEIS SALIDAS
+- Control_Netos_Impuestos.xlsx: una fila por linea original observada,
+  reuniendo sus motivos y conservando los importes originales de esa linea. Se excluyen Movimientos
+  Pendientes. Solo usa importes originales; no recalcula porcentajes de SGA.
+  DiferenciaSuma es importe menos neto, IVA e IIBB. No es la suma de todas
+  las observaciones. Las columnas finales conservan importes esperados, diferencias y fila SGA.
+  El saldo mostrado es contexto de la factura, no debe sumarse entre filas
+  de diferentes imputaciones de esa misma factura.
+- Control_Datos_Obligatorios.xlsx: exige aporte o expediente y operacion segun
+  concepto y controla coincidencia con la factura. Las excepciones confirmadas
+  estan en el Word. DEUDAS DIVERSAS, SERVICIOS ADMINISTRATIVOS y CHEQUE RECHAZADO
+  quedan exceptuados. Las restantes propuestas se identifican para revisar.
+- Control_Servicios_Administrativos.xlsx: controla el segundo servicio, excluye
+  del computo las facturas totalmente anuladas por NC/NE aplicadas y mantiene
+  las anuladas como informacion. Una NC parcial o un cobro no anulan el servicio.
+  SIN PRIMER SERVICIO VISIBLE reemplaza REVISAR cuando el antecedente no se ve.
+- Saldo_MORA.xlsx: suma del historico completo con signos, por fondo, incluyendo
+  imputaciones y NC.
+- Comprobantes_Abiertos.xlsx: incluye todos los internos abiertos y excluye las
+  facturas oficiales FC-A, FC-B, FE-A y todos los comprobantes serie Y. Columna Clasificacion: OPX, NOTAS DE
+  CREDITO, NOTAS DE DEBITO, FACTURAS INTERNAS y RECIBOS. Se reconocen NE y DE.
+  Cualquier centavo positivo o negativo se incluye. Los registros sin numero
+  quedan SIN IDENTIFICAR / REVISAR. No se duplica un documento ya representado
+  por su remanente pendiente. Los saldos sin emision visible requieren revision.
+- Control_Concepto_Agrupador.xlsx: valida agrupador y conceptos. COMISION POR
+  CUENTA DE TERCEROS e INCOBRABLES PARTICIPES - GTZ requieren Comisiones;
+  INCOBRABLES PARTICIPES - FRG e INCOBRABLES QUITA requieren MORA.
+  DEUDA POR APORTE NO VIGENTE - RDO. EJ. conserva la excepcion anterior.
+
+TODAS LAS SALIDAS SEPARAN GENERAL Y SANTA FE
+Factura: fondo + CodigoEmpresa + NumeroFactura.
+Servicios: fondo + CodigoEmpresa + NumeroDeAporte.
+OPX pendientes: fondo + CodigoEmpresa + subrecibo.
+El historico exacto CH-20190722105522839 sigue excluido.
+REFERENCIA_NO_VINCULADA no confirma que el documento no exista en SGA.
+Los cruces FI reciprocos reales se reconocen sin inventar una emision.
+
+REDONDEOS Y FECHAS
+Netos: margen inicial $0,02 por linea; saldo $0,02 por cantidad de lineas.
+Comprobantes abiertos: sin tolerancia, cualquier diferencia se muestra.
+Servicios: desde octubre de 2026, segundo dentro del mismo mes del ano siguiente;
+antes, si existe el segundo se acepta el desfase historico.
+La fecha de corte se usa para servicios, anulaciones y separacion de solapas.
+Las otras salidas leen el reporte recibido completo segun las exclusiones
+de cada control.
+
+RESULTADOS DE PRUEBA INCLUIDOS
+Se usaron las 458.658 lineas del reporte adjunto y corte de servicios 2026-10-16,
+igual que en la version anterior para poder comparar. La cantidad de filas no
+representa necesariamente errores diferentes. Consultar Controles_SGA.docx.
+
+PRESENTACION EN EXCEL
+Se generan seis archivos .xlsx con filtros y encabezados inmovilizados.
+Control, estado y motivo aparecen al principio; en abiertos, Clasificacion.
+- Servicios: Ano en curso e Historico, segun el ano en que corresponde el
+  segundo servicio. Los futuros no exigibles quedan fuera de estas vistas;
+  su cantidad se informa en ejecucion.json (185 en los resultados incluidos).
+- Datos obligatorios y Concepto/Agrupador: Ano en curso e Historico, segun
+  FechaFactura. Las fechas no disponibles quedan en Historico para revisar.
+- Netos: MORA (todo el historico), Mes en curso (otros agrupadores con alguna
+  imputacion en el mes de corte) e Historico (los demas casos no MORA).
+  El bloque CodigoEmpresa a ImporteIIBB conserva los encabezados, orden y
+  valores originales del reporte para solicitar correcciones a Sistemas.
+  Las diferencias se explican con importes y celdas observadas anaranjadas.
+  Si solo se detecta una suma incorrecta, se marca Importe sin atribuir el
+  problema a un componente especifico. El saldo por factura es contexto y
+  no debe sumarse entre diferentes lineas de la misma factura.
+El ano y mes en curso se determinan por la fecha de corte ingresada.
+Mantener control_sga.py y excel_sga.py juntos: ambos forman el programa.
+
+reglas_propuestas.json contiene propuestas de datos y agrupadores.
+Para usar reglas validadas:
+  py control_sga.py "reporte.xlsx" --corte 2026-10-31 --reglas "reglas.json"
+Las reglas confirmadas en el programa prevalecen sobre configuraciones antiguas.
+ejecucion.json guarda la version, parametros y cantidades de la ejecucion.
+
+CORRECCIONES DE LA VERSION 1.5
+- Netos: mensajes cortos (Completar Neto / Corregir IVA, etc.). Se conservan
+  las lineas originales, sin juntar importes, y las celdas observadas anaranjadas.
+- Datos obligatorios: una fila por linea de origen. Factura e imputaciones
+  separadas; todos los motivos de esa linea aparecen juntos en Motivo.
+- Abiertos: FechaComprobante es la fecha de emision del documento controlado,
+  obtenida del reporte completo por fondo + cliente + numero. No se usa la
+  fecha de la factura vinculada ni FechaImputacion como reemplazo. Si falta
+  en origen, ControlFecha lo indica y la celda se colorea.
+- Comprobante muestra el documento cuyo saldo se controla; los recibos u
+  OPX aplicados a una factura interna aparecen en ComprobantesRelacionados.
+  OPX/OP-X corresponden a OPX; RC/RCX/RC-X corresponden a RECIBOS.
+- En la prueba hay 9.507 comprobantes identificados, todos con fecha. Las
+  otras dos lineas no tienen numero de comprobante ni fecha atribuible.

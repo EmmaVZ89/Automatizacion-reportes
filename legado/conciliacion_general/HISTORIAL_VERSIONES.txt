@@ -1,0 +1,34 @@
+﻿HISTORIAL ACUMULADO - CIERRE MENSUAL GENERAL
+Todas estas versiones se prepararon el 16/10/2026.
+
+1.0 - Primera prueba de conciliacion
+Lectura de SGA y tres ERP por nombres configurados; agrupacion decimal,
+cruces por cliente, controles de FI-P, OPX y REH y varias salidas CSV.
+Se entrego tambien un Excel de muestra. La cobertura se controlaba entre
+categorias, pero el cruce principal solo incluia FACTURA, NC y SR.
+
+1.1 - Reconocimiento de nombres variables
+Se dejo de depender de nombres exactos. Se reconocieron fuentes por columnas
+y tipos de transaccion. Se mantuvo el requisito de los tres ERP separados.
+
+1.2 - ERP unificado y alcance abiertos/completo
+Se incorporo ERP unificado, eleccion de alcance, reconocimiento de la hoja
+original dentro de libros con resumenes y mayor precision decimal.
+Los cancelados ausentes en ERP de abiertos quedaron no evaluados.
+Se conservaron varias salidas, y el cruce principal aun excluia algunos grupos.
+
+1.3 - Unica conciliacion general con todos los movimientos
+Se incluyen REH, movimientos sin factura y pendientes identificados como FI-P.
+Los casos sin identificacion suficiente quedan dentro del mismo resultado.
+Se controla que todas las filas e importes esten en la salida general.
+Una unica salida principal CSV, con totales y controles identificados.
+El respaldo tecnico se guarda en una subcarpeta. Se dejan para despues los
+controles especificos. No se genera XLSX ni se llama al exportador anterior.
+
+Desde 1.3 cada entrega incluye una nota del proceso completo, cambios,
+instalacion, resultados, pruebas y limitaciones, ademas de este historial.
+
+VERSIÓN 1.4 — 16/10/2026
+Presentación XLSX con dos solapas; controles separados del detalle.
+Nombres de resultado simplificados. Tipo visual OP-X; cruce sigue por
+socio y subrecibo. ND sin cambios. Matemática y cobertura 1.3 conservadas.

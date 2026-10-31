@@ -1,0 +1,20 @@
+﻿Tipo;Cliente;Comprobante;CUIT;Razon social;Saldo SGA;Saldo ERP;Diferencia SGA menos ERP;Resultado;Filas SGA;Filas ERP;Origen SGA (primeras 5);Origen ERP (primeras 5);Estado revision;Observaciones;Fondo;Detalle identificacion
+FACTURA;1;F0;201;Socio;0.00;;;NO EVALUADO - ERP SOLO ABIERTOS;2;0;cualquier_sga.xlsx [Original]:5 | cualquier_sga.xlsx [Original]:6;;;;Fondo de Riesgo General;
+FACTURA;1;F1;201;Socio;80.00;80.00;0.00;COINCIDE;2;1;cualquier_sga.xlsx [Original]:2 | cualquier_sga.xlsx [Original]:3;erp_12345.xlsx [Original]:2;;;Fondo de Riesgo General;
+FACTURA;1;F2;201;Socio;50.00;;;SOLO EN SGA — REVISAR EN ERP;1;0;cualquier_sga.xlsx [Original]:4;;;;Fondo de Riesgo General;
+FACTURA;1;FC-X1;201;Socio;1.00;1.00;0.00;COINCIDE;1;1;cualquier_sga.xlsx [Original]:9;erp_12345.xlsx [Original]:7;;;Fondo de Riesgo General;
+FACTURA;2;F3;;;;30.00;;SOLO EN ERP — REVISAR EN SGA;0;1;;erp_12345.xlsx [Original]:3;;;Fondo de Riesgo General;
+NC;1;NC-1;201;Socio;-2.00;-2.00;0.00;COINCIDE;1;1;cualquier_sga.xlsx [Original]:7;erp_12345.xlsx [Original]:4;;;Fondo de Riesgo General;
+REH;1;REH1;;;;7.00;;SOLO EN ERP — REVISAR EN SGA;0;1;;erp_12345.xlsx [Original]:6;;"Asiento REH incluido en el saldo general; no se concilia por importe ni por estado de cheque.";Fondo de Riesgo General;
+OP-X;1;SR-1;201;Socio;-10.00;-10.00;0.00;COINCIDE;1;1;cualquier_sga.xlsx [Original]:8;erp_12345.xlsx [Original]:5;;"OPX incluida una sola vez; si hay subrecibo, el cruce se hace por ese identificador.";Fondo de Riesgo General;OP-X1 | SR-1
+CONTROL;;TOTAL GENERAL POR COMPROBANTE;;;119.00;106.00;13.00;TOTAL INFORMATIVO;;;;;;Suma del detalle de Conciliación general. Estos totales se muestran solo en Resumen. No certifica integridad ni resuelve ausentes.;Fondo de Riesgo General;
+CONTROL;;TOTAL FUENTES RECIBIDAS;;;119.00;106.00;13.00;TOTAL INFORMATIVO;;;;;;Totales calculados desde todas las filas incluidas de los originales.;Fondo de Riesgo General;
+CONTROL;;DIFERENCIA DE REDONDEO;;;0.00;0.00;;CONTROL DE REDONDEO;;;;;;"Total fuente redondeado menos suma de saldos redondeados por comprobante; no se oculta ni se ajusta.";Fondo de Riesgo General;
+CONTROL;;COBERTURA DE MOVIMIENTOS;;;;;;TODOS LOS MOVIMIENTOS INCLUIDOS;;;;;;SGA: 8 filas. ERP: 6 filas. Cada fila se incluyó una sola vez en el resultado.;Fondo de Riesgo General;
+CONTROL;;ALCANCE Y CORTE;;;;;;PRUEBA PRELIMINAR;;;;;;ERP: abiertos. Corte declarado: 2026-10-31. Integridad ERP no confirmada. El corte no reconstruye saldos históricos.;Fondo de Riesgo General;
+CONTROL;;CANTIDAD: COINCIDE;;;;;;4;;;;;;"Cantidad de filas de datos de este resultado; no incluye controles.";Fondo de Riesgo General;
+CONTROL;;CANTIDAD: NO EVALUADO - ERP SOLO ABIERTOS;;;;;;1;;;;;;"Cantidad de filas de datos de este resultado; no incluye controles.";Fondo de Riesgo General;
+CONTROL;;CANTIDAD: SOLO EN ERP — REVISAR EN SGA;;;;;;2;;;;;;"Cantidad de filas de datos de este resultado; no incluye controles.";Fondo de Riesgo General;
+CONTROL;;CANTIDAD: SOLO EN SGA — REVISAR EN ERP;;;;;;1;;;;;;"Cantidad de filas de datos de este resultado; no incluye controles.";Fondo de Riesgo General;
+CONTROL;;FUENTE SGA;;;;;;;;;;;;cualquier_sga.xlsx / hoja Original / filas incluidas 8 / SHA256 c51a7ddadf9b761377a44e9a2d8f3f826456f7054cb0e52d68230794efaae4f8;Fondo de Riesgo General;
+CONTROL;;FUENTE ERP;;;;;;;;;;;;erp_12345.xlsx / hoja Original / filas incluidas 6 / SHA256 924a637d4e861291b8b7bea145acd3d9cde31cd25cd33ab42092a5b601a9fe6e;Fondo de Riesgo General;

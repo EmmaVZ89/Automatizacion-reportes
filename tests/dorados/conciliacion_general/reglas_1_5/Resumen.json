@@ -1,0 +1,88 @@
+{
+  "version": "1.5",
+  "alcance_erp": "abiertos",
+  "fecha_corte": "2026-10-31",
+  "fondo": "Fondo de Riesgo General",
+  "estado": "PRUEBA PRELIMINAR - INTEGRIDAD ERP NO CONFIRMADA",
+  "salida_principal": "Conciliacion_general.xlsx",
+  "registros_datos": 13,
+  "conteos": {
+    "DIFERENCIA": 5,
+    "COINCIDE": 5,
+    "NO EVALUADO - ERP SOLO ABIERTOS": 1,
+    "SOLO EN ERP — REVISAR EN SGA": 2
+  },
+  "cobertura_salida": {
+    "SGA": {
+      "filas_fuente": 12,
+      "filas_incluidas_resultado": 12,
+      "total_fuente_exacto": "-19",
+      "total_resultado_exacto": "-19",
+      "total_fuente_redondeado": "-19.00",
+      "suma_saldos_por_comprobante": "-19.00",
+      "diferencia_redondeo": "0.00"
+    },
+    "ERP": {
+      "filas_fuente": 6,
+      "filas_incluidas_resultado": 6,
+      "total_fuente_exacto": "-59",
+      "total_resultado_exacto": "-59",
+      "total_fuente_redondeado": "-59.00",
+      "suma_saldos_por_comprobante": "-59.00",
+      "diferencia_redondeo": "0.00"
+    }
+  },
+  "fuentes": [
+    {
+      "sistema": "SGA",
+      "reporte": "Historico",
+      "archivo": "sga_reglas.xlsx",
+      "hoja": "Datos",
+      "sha256": "047514957aef8195dee8a3136f40d85baef1df1f0892f779678e44c94779791c",
+      "filas_archivo": 12,
+      "filas_incluidas": 12,
+      "total_exacto": "-19",
+      "integridad": "SEGUN ARCHIVO RECIBIDO",
+      "fecha_descarga": "NO INFORMADA",
+      "tipos": {}
+    },
+    {
+      "sistema": "ERP",
+      "reporte": "ERP automático",
+      "archivo": "erp_reglas.xlsx",
+      "hoja": "Datos",
+      "sha256": "8a6750eb69b999e21b675aeaa9dbeb5b3e1abf3e9d02b9ca1007089a88458fc3",
+      "filas_archivo": 6,
+      "filas_incluidas": 6,
+      "total_exacto": "-59",
+      "integridad": "NO CONFIRMADA",
+      "fecha_descarga": "NO INFORMADA",
+      "tipos": {
+        "Pago": 4,
+        "Cliente": 1,
+        "Diario general": 1
+      }
+    }
+  ],
+  "tipos_erp_ausentes": [],
+  "alertas": [
+    [
+      "SGA",
+      "sga_reglas.xlsx",
+      5,
+      "10",
+      "FI-P0001",
+      "Movimiento sin cruce automático",
+      "300"
+    ],
+    [
+      "ERP",
+      "",
+      "",
+      "",
+      "",
+      "Modo abiertos: filas con Saldo2 cero: 1. Se conservaron; revisar filtro y divisas.",
+      ""
+    ]
+  ]
+}

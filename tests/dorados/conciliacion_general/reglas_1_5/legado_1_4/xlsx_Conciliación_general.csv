@@ -1,0 +1,13 @@
+Tipo;Cliente;Comprobante;CUIT;Razon social;Saldo SGA;Saldo ERP;Diferencia SGA menos ERP;Resultado;Filas SGA;Filas ERP;Origen SGA (primeras 5);Origen ERP (primeras 5);Estado revision;Observaciones;Fondo;Detalle identificacion
+FACTURA;10;FI-P0001;27000000010;Socia diez;0.0;;;NO EVALUADO - ERP SOLO ABIERTOS;2;0;sga_reglas.xlsx [Datos]:2 | sga_reglas.xlsx [Datos]:5;;;"Incluye movimiento pendiente identificado por comprobante; revisar su clasificación por separado.";Fondo de Riesgo General
+FACTURA;10;FI-P0002;27000000010;Socia diez;0.0;;;NO EVALUADO - ERP SOLO ABIERTOS;2;0;sga_reglas.xlsx [Datos]:3 | sga_reglas.xlsx [Datos]:4;;;;Fondo de Riesgo General
+FACTURA;15;FC-A0001;20000000015;Socio quince;0.0;;;NO EVALUADO - ERP SOLO ABIERTOS;2;0;sga_reglas.xlsx [Datos]:10 | sga_reglas.xlsx [Datos]:11;;;;Fondo de Riesgo General;SR-0099
+FACTURA;16;FC-A0002;20000000016;Socio dieciseis;70.0;;;SOLO EN SGA — REVISAR EN ERP;1;0;sga_reglas.xlsx [Datos]:12;;;;Fondo de Riesgo General
+FACTURA;17;FC-A0003;;;;0.0;;NO EVALUADO - ERP SOLO ABIERTOS;0;1;;erp_reglas.xlsx [Datos]:5;;;Fondo de Riesgo General
+FACTURA;19;FC-A0004;;;;1.0;;SOLO EN ERP — REVISAR EN SGA;0;1;;erp_reglas.xlsx [Datos]:7;;;Fondo de Riesgo General
+OP-X;11;SR-0011;20000000011;Socio once;-50.0;-50.0;0.0;COINCIDE;1;1;sga_reglas.xlsx [Datos]:6;erp_reglas.xlsx [Datos]:2;;;Fondo de Riesgo General;RC-X0001 | SR-0011
+OP-X;12;SR-0012;20000000012;Socio doce;-40.0;-40.0;0.0;COINCIDE;1;1;sga_reglas.xlsx [Datos]:7;erp_reglas.xlsx [Datos]:3;;;Fondo de Riesgo General;RC-R0001 | SR-0012
+OP-X;13;SR-0013;20000000013;Socio trece;25.0;25.0;0.0;COINCIDE;1;1;sga_reglas.xlsx [Datos]:8;erp_reglas.xlsx [Datos]:4;;"OPX incluida una sola vez; si hay subrecibo, el cruce se hace por ese identificador.";Fondo de Riesgo General;OP-X0001 | SR-0013
+OP-X;14;SR-0014;20000000014;Socio catorce;-15.0;;;SOLO EN SGA — REVISAR EN ERP;1;0;sga_reglas.xlsx [Datos]:9;;;;Fondo de Riesgo General;SR-0014
+OP-X;18;SR-0018;;;;5.0;;SOLO EN ERP — REVISAR EN SGA;0;1;;erp_reglas.xlsx [Datos]:6;;;Fondo de Riesgo General;RC-X0003 | SR-0018
+OP-X;20;SR-0020;20000000020;Socio veinte;-9.0;;;SOLO EN SGA — REVISAR EN ERP;1;0;sga_reglas.xlsx [Datos]:13;;;;Fondo de Riesgo General;SR-0020

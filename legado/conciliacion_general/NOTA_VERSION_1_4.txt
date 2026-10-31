@@ -1,0 +1,47 @@
+VERSIÓN 1.4 — 16/10/2026
+
+QUÉ HACE
+Primera conciliación general de todos los movimientos recibidos para Fondo
+de Riesgo General. No incorpora los demás controles del cierre todavía.
+Agrupa por socio, tipo interno y comprobante, suma con Decimal exacto antes
+de redondear a dos decimales. En ERP toma Saldo2 y conserva los signos.
+Las ausencias no se reemplazan por cero: saldo y diferencia quedan vacíos.
+Incluye REH y movimientos sin identificación, sin emparejar por importe.
+La matemática y las prioridades de cruce de 1.3 no cambian.
+
+ENTRADAS Y USO
+Un histórico SGA y ERP unificado o hasta tres archivos separados por tipo.
+Detecta nombres variables y hoja original por encabezados; rechaza fuentes
+ambiguas, duplicados y tipos ERP superpuestos. General únicamente.
+Ver LEEME.txt para instalación y comando con alcance abiertos/completo.
+
+CAMBIOS
+Un único Excel principal, con Resumen y Conciliación general.
+Los controles antes ubicados al final del CSV se muestran solo en Resumen.
+Python escribe XLSX directamente sin paquetes adicionales ni automatizar Excel.
+Tipo visible SR/OPX pasa a OP-X, sin cambiar la clave interna por subrecibo
+ni agrupar por número de OP-X. Sin subrecibo conserva la OP-X identificada.
+ND permanece en FACTURA: no se aprobó un cambio de clasificación para ND.
+
+NOMBRES DE RESULTADO
+SIN COINCIDENCIA - ERP SOLO ABIERTOS -> SOLO EN SGA — REVISAR EN ERP
+SOLO ERP - REVISAR -> SOLO EN ERP — REVISAR EN SGA
+REVISAR IDENTIFICACION - SGA -> SIN COMPROBANTE EN SGA — REVISAR
+COINCIDE, DIFERENCIA y los otros estados conservan su significado.
+NO EVALUADO - ERP SOLO ABIERTOS: cero presente de un lado y contraparte
+no recibida; la descarga de abiertos no permite confirmar ambas partes.
+
+LIMITACIONES
+El alcance abiertos no permite confirmar que un documento ausente tenga
+saldo cero en ERP. La integridad de la descarga debe verificarse aparte.
+El corte declarado no reconstruye saldos a esa fecha.
+Excel almacena números con hasta 15 dígitos significativos; el cálculo exacto
+se conserva en trazabilidad y JSON. No usar Excel para recalcular el motor.
+Las validaciones manuales de la responsable funcional confirman los casos revisados del cierre;
+no certifican por sí mismas integridad ERP ni resolución contable del cierre.
+El archivo se verificó estructuralmente y con lectura independiente; falta
+confirmar su visualización en el Excel de la PC de la usuaria.
+
+VERIFICACIÓN
+Consultar VALIDACION_1_4.txt. Los controles automáticos no sustituyen la
+revisión del cierre ni los controles adicionales aún pendientes de desarrollar.

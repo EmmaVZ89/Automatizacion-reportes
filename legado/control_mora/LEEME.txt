@@ -1,0 +1,42 @@
+CONTROL DE MORA - ERP / SGA
+
+PRIMER USO
+1. Extraer todo el ZIP (no ejecutar desde dentro del ZIP).
+2. Copiar a entrada los dos Excel originales, del mismo corte:
+   - Saldo de comprobación*.xlsx
+   - ReporteHistoricoDeCuentaCorriente*.xlsx
+   Los números de descarga, espacios y sufijos pueden cambiar.
+   Debe quedar un solo archivo de cada tipo. No hace falta renombrarlos.
+3. Con Python instalado, abrir una terminal en esta carpeta y ejecutar:
+   py -m pip install openpyxl
+   Este paso se hace solo una vez si openpyxl no está instalado.
+4. Hacer doble clic en EJECUTAR.bat. Esperar hasta el resultado final.
+   También se puede ejecutar: py control_mora.py
+5. Abrir salida y entrar en la carpeta de la nueva ejecución.
+
+RESULTADOS
+Resultado_Control_Mora.csv: saldos ERP y SGA, diferencia y estado.
+Respaldo_ERP.csv: todas las columnas de las cinco cuentas de FRG.
+Respaldo_SGA_Mora.csv: todas las columnas de cada fila de Mora de FRG.
+Los CSV se abren en Excel; están separados por punto y coma y usan coma decimal.
+Si Excel los muestra en una sola columna, importar desde Datos > Desde texto/CSV,
+con delimitador punto y coma y codificación UTF-8.
+PROCESO_COMPLETO.txt: confirma que terminó correctamente.
+Si aparece ERROR, no usar los respaldos parciales de esa ejecución.
+
+CRITERIOS
+ERP: sumar Saldo de cierre de las cuentas 113601, 113602, 113603,
+113604 y 113605, únicamente BusinessUnit FRG. 113601 se cuenta una vez.
+SGA: sumar Importe con su signo para GrupoConceptoFacturacion = Mora
+y FondoDeRiesgo = Fondo de Riesgo General. Incluye facturas e imputaciones.
+No se suma ImporteNetoGravado ni se vuelven a agregar impuestos.
+Diferencia = ERP menos SGA; se compara al centavo.
+El usuario debe descargar ambos reportes al mismo corte; el proceso no
+deduce la fecha de corte a partir de las fechas de los movimientos.
+Reconoce las hojas por sus columnas, no por el nombre de la solapa.
+No modifica los archivos originales. Conserva archivo, hoja y fila de origen.
+
+SIGUIENTES USOS
+Retirar de entrada los archivos del control anterior, copiar los nuevos
+y ejecutar EJECUTAR.bat. Cada ejecución conserva sus propios resultados.
+La carpeta salida incluye una prueba con los archivos recibidos.

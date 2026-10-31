@@ -1,0 +1,23 @@
+CONTROL DE CHEQUES
+SGA: cheques_sga.xlsx
+ERP: tesoreria_erp.xlsx
+
+Filas ERP: 14
+Filas ERP sin ID (no se pueden cruzar): 1
+Filas SGA: 14
+Estados coincidentes: 3
+Diferencia de estado: 2
+ID duplicado en ERP: revisar antes de comparar: 1
+Cancelado en ERP presente en SGA: 1
+Excluidos: Pago a Proveedores: 2
+Validos: Canjeado historico: 1
+Validos: ID historico 563: 1
+Falta ID en SGA: 1
+ID no encontrado en ERP: 1
+Estado ERP sin regla definida: 1
+Total para revisar: 7
+
+Alcance: estados de los cheques presentes en SGA. No compara importes ni fechas.
+Los ID se comparan exactamente, conservando ceros, tras reemplazar el prefijo 10000 por gtz-.
+No se usa IdCheque2 ni las columnas auxiliares. No se exige que todos los registros ERP aparezcan en SGA.
+Los ID duplicados en ERP se revisan sin elegir arbitrariamente una coincidencia.

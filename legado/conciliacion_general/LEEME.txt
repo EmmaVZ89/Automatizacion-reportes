@@ -1,0 +1,38 @@
+﻿VERSION 1.4 - CONCILIACIÓN GENERAL EN EXCEL
+
+INSTALACIÓN
+Extraer el ZIP. Copiar TODOS sus archivos a la carpeta donde está el programa.
+Aceptar reemplazar los archivos de programa y documentación.
+Conservar configuracion.json, entradas y resultados anteriores.
+IMPORTANTE: excel_general.py debe estar al lado de conciliar.py.
+No requiere instalar paquetes ni tener Excel abierto.
+
+EJECUCIÓN
+Dejar en entradas el SGA y un ERP unificado o hasta tres ERP separados,
+sin superposición de tipos. Los nombres pueden cambiar en cada descarga.
+Abrir CMD desde la carpeta del programa y escribir:
+
+py -3 conciliar.py --alcance abiertos --corte 2026-09-30
+
+Para ERP completo: cambiar abiertos por completo.
+Para otro cierre: cambiar fecha y usar fuentes correspondientes.
+La fecha declara el corte; no filtra ni reconstruye saldos históricos.
+También puede ejecutar EJECUTAR.bat y elegir el alcance; no declara fecha.
+
+RESULTADO
+Esperar el mensaje Resultado. Abrir Conciliacion_general.xlsx dentro de
+la nueva carpeta de resultados. No abrir los CSV del respaldo para revisar.
+- Resumen: totales, cantidades, cobertura, redondeos, alertas y fuentes.
+- Conciliación general: solo comprobantes, con filtros y encabezado fijo.
+  Los importes son números; CUIT, socio y comprobante son texto.
+  No hay controles ni totales mezclados en la columna Resultado.
+- Respaldo_tecnico: CSV técnico, JSON, base de trazabilidad y constancia.
+  Conservar para poder auditar. No es otro informe de trabajo.
+
+TIPO OP-X
+El tipo visual OP-X reemplaza SR y OPX. La clave sigue usando socio y
+subrecibo cuando existe; Comprobante muestra el subrecibo usado.
+Sin subrecibo, conserva el identificador OP-X; no inventa un cruce.
+ND sigue dentro de FACTURA, conservando el prefijo ND en el comprobante.
+
+Leer NOTA_VERSION_1_4.txt e HISTORIAL_VERSIONES.txt.

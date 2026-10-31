@@ -1,0 +1,7 @@
+,,,,,,,,,,,,,,,,,
+Control Concepto Agrupador,,,,,,,,,,,,,,,,,
+"Corte 2026-10-31 · 2 casos · Facturas del año 2026. Control, estado y motivo al principio.",,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,
+Control,Estado,Motivo,FondoDeRiesgo,CodigoEmpresa,CUIT,RazonSocial,NumeroFactura,FechaFactura,NumeroComprobanteImputacion,FechaImputacion,Concepto,ConceptoFacturacionImputacion,GrupoConceptoFacturacion,AgrupadorEsperado,AgrupadorRequerido,AgrupadorFactura,FilaOrigen
+Concepto y agrupador,REVISAR,Agrupador distinto del propuesto por las lineas de emision.,FONDO A,101,201010000101,Empresa 101,FI-0001,2026-03-10,RC-0002,2026-10-10,COMISION FRG,COMISION FRG,OTROS,COMISIONES,,,4
+Concepto de imputacion diferente,REVISAR,"Concepto de imputacion vacio o distinto de los conceptos emitidos, sin excepcion confirmada.",FONDO A,115,201150000115,Empresa 115,FI-0015,2026-02-01,RC-0015,2026-02-10,COMISION FRG,OTRO CONCEPTO,COMISIONES,,,,30

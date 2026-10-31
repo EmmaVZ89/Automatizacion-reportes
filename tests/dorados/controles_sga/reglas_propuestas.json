@@ -1,0 +1,151 @@
+{
+  "CHEQUE RECHAZADO": {
+    "datos": "EXENTO",
+    "datos_confirmados": true,
+    "agrupador": "CHEQUES",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 1,
+    "con_aporte": 0,
+    "con_exp_op": 0
+  },
+  "COMISION FRG": {
+    "datos": "EXP_OP",
+    "datos_confirmados": false,
+    "agrupador": "COMISIONES",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 4,
+    "con_aporte": 0,
+    "con_exp_op": 4
+  },
+  "DEUDA POR APORTE NO VIGENTE": {
+    "datos": "SIN_DEFINIR",
+    "datos_confirmados": false,
+    "agrupador": "APORTES",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 1,
+    "con_aporte": 0,
+    "con_exp_op": 0
+  },
+  "GASTOS VARIOS": {
+    "datos": "SIN_DEFINIR",
+    "datos_confirmados": false,
+    "agrupador": "OTROS",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 1,
+    "con_aporte": 0,
+    "con_exp_op": 0
+  },
+  "INCOBRABLES FRG": {
+    "datos": "EXP_OP",
+    "datos_confirmados": false,
+    "agrupador": "MORA",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 1,
+    "con_aporte": 0,
+    "con_exp_op": 1
+  },
+  "INTERESES MORA": {
+    "datos": "EXP_OP",
+    "datos_confirmados": false,
+    "agrupador": "MORA",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 1,
+    "con_aporte": 0,
+    "con_exp_op": 1
+  },
+  "SERV. ADMINIST. FRG - 1O": {
+    "datos": "APORTE",
+    "datos_confirmados": true,
+    "agrupador": "SERVICIOS",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 9,
+    "con_aporte": 8,
+    "con_exp_op": 0
+  },
+  "SERV. ADMINIST. FRG - 2O": {
+    "datos": "APORTE",
+    "datos_confirmados": true,
+    "agrupador": "SERVICIOS",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 3,
+    "con_aporte": 3,
+    "con_exp_op": 0
+  },
+  "VENTA BIENES DE USO": {
+    "datos": "EXENTO",
+    "datos_confirmados": true,
+    "agrupador": "VENTAS",
+    "agrupador_confirmado": false,
+    "lineas_emision_observadas": 1,
+    "con_aporte": 0,
+    "con_exp_op": 0
+  },
+  "SINIESTROS A COBRAR": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "IMPORTES A RECUPERAR CON IVA": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "OTROS INGRESOS": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "PUBLICIDAD GRAFICA": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "DEVOLUCION DE COBRANZA": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "GASTOS DE ESTUDIO": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "COMISION POR CUENTA DE TERCEROS": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "REINTEGRO DE GASTOS": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "RESCATE AVAL POR CGTIA": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "DEVOLUCION A LOS FONDOS ESPECIFICOS": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "DIFERENCIA DE CAMBIO": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "GASTOS ESCRIBANIA": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "CHEQUE A CANJEAR - FRG": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "VENTA DE BIENES DE USO": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "DEUDAS DIVERSAS": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "SERVICIOS ADMINISTRATIVOS": {
+    "datos": "EXENTO",
+    "datos_confirmados": true
+  },
+  "DEUDA POR APORTE VENCIDO GTZ": {
+    "datos": "APORTE",
+    "datos_confirmados": true
+  }
+}

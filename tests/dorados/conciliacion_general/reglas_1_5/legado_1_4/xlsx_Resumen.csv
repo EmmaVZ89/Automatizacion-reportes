@@ -1,0 +1,14 @@
+Control;Saldo SGA;Saldo ERP;Diferencia;Resultado / cantidad;Detalle
+TOTAL GENERAL POR COMPROBANTE;-19.0;-59.0;40.0;TOTAL INFORMATIVO;Suma del detalle de Conciliación general. Estos totales se muestran solo en Resumen. No certifica integridad ni resuelve ausentes.
+TOTAL FUENTES RECIBIDAS;-19.0;-59.0;40.0;TOTAL INFORMATIVO;Totales calculados desde todas las filas incluidas de los originales.
+DIFERENCIA DE REDONDEO;0.0;0.0;;CONTROL DE REDONDEO;"Total fuente redondeado menos suma de saldos redondeados por comprobante; no se oculta ni se ajusta."
+COBERTURA DE MOVIMIENTOS;;;;TODOS LOS MOVIMIENTOS INCLUIDOS;SGA: 12 filas. ERP: 6 filas. Cada fila se incluyó una sola vez en el resultado.
+ALCANCE Y CORTE;;;;PRUEBA PRELIMINAR;ERP: abiertos. Corte declarado: 2026-10-31. Integridad ERP no confirmada. El corte no reconstruye saldos históricos.
+CANTIDAD: COINCIDE;;;;3;"Cantidad de filas de datos de este resultado; no incluye controles."
+CANTIDAD: NO EVALUADO - ERP SOLO ABIERTOS;;;;4;"Cantidad de filas de datos de este resultado; no incluye controles."
+CANTIDAD: SOLO EN ERP — REVISAR EN SGA;;;;2;"Cantidad de filas de datos de este resultado; no incluye controles."
+CANTIDAD: SOLO EN SGA — REVISAR EN ERP;;;;3;"Cantidad de filas de datos de este resultado; no incluye controles."
+ALERTA;;;;REVISAR;SGA | sga_reglas.xlsx | 5 | 10 | FI-P0001 | Movimiento sin cruce automático | 300
+ALERTA;;;;REVISAR;"ERP | Modo abiertos: filas con Saldo2 cero: 1. Se conservaron; revisar filtro y divisas."
+FUENTE SGA;;;;;sga_reglas.xlsx / hoja Datos / filas incluidas 12 / SHA256 047514957aef8195dee8a3136f40d85baef1df1f0892f779678e44c94779791c
+FUENTE ERP;;;;;erp_reglas.xlsx / hoja Datos / filas incluidas 6 / SHA256 8a6750eb69b999e21b675aeaa9dbeb5b3e1abf3e9d02b9ca1007089a88458fc3

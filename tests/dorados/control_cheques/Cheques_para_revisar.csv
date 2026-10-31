@@ -1,0 +1,8 @@
+﻿Motivo;ID ERP;ID SGA;Empresa;CUIT;Numero cheque;Importe SGA;Estado SGA;Estado ERP;Fila SGA;Filas ERP
+Diferencia de estado;gtz-000003;10000000003;Empresa Tres;30000000003;103;1234,50;Acreditado;Depositado;4;5
+ID duplicado en ERP: revisar antes de comparar;gtz-000004;10000000004;Empresa Cuatro;30000000004;104;800,00;Acreditado;En cartera / Depositado;5;4 / 11
+Cancelado en ERP presente en SGA;gtz-000005;10000000005;Empresa Cinco;30000000005;105;900,00;Acreditado;Cancelado;6;6
+Falta ID en SGA;;;Empresa Diez;30000000010;110;1300,00;Acreditado;;11;
+ID no encontrado en ERP;gtz-000011;10000000011;Empresa Once;30000000011;111;1400,00;Acreditado;;13;
+Estado ERP sin regla definida;gtz-000012;10000000012;Empresa Doce;30000000012;112;1.600,00;Rechazado;Anulado;14;12
+Diferencia de estado;gtz-000014;10000000014;Empresa Catorce;30000000014;114;1800,00;Depositado;Rechazado;16;14

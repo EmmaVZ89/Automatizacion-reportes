@@ -1,0 +1,9 @@
+﻿ArchivoOrigen;HojaOrigen;FilaOrigen;FondoDeRiesgo;CodigoEmpresa;NumeroFactura;FechaFactura;TipoComprobante;GrupoConceptoFacturacion;Concepto;Importe;Observaciones;NumeroComprobanteImputacion
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;2;Fondo de Riesgo General;1001;FC-A 0001-00000001;2026-01-15 00:00:00;FC-A;MORA;Intereses por mora;1200,5;;
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;3;Fondo de Riesgo General;1001;RC 0001-00000010;2026-02-01 10:30:00;RC;Mora;Imputación;-1200,5;;FC-A 0001-00000001
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;4;Fondo de Riesgo General;1002;FC-A 0001-00000002;2026-03-03 00:00:00;FC-A;mora;Intereses;0,1;Texto normal;
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;5;Fondo de Riesgo General;1002;FC-A 0001-00000003;2026-03-04 00:00:00;FC-A;MORA;Intereses;0,2;'+ignorar;
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;8;Fondo de Riesgo General;1004;FC-A 0001-00000006;2026-05-05 00:00:00;FC-A;MORA ;Intereses;2149,1;'@mencion;
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;9;Fondo de Riesgo General;1004;ND 0001-00000001;2026-06-06 00:00:00;ND;Móra;Intereses;1000;;
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;12;fondo de riesgo general;1006;FC-A 0001-00000009;2026-07-07 00:00:00;FC-A;Mora;Intereses;200,55;;
+ReporteHistoricoDeCuentaCorriente_prueba.xlsx;CtaCteCompleta;13;Fondo de Riesgo General;1006;RC 0001-00000011;;RC;Mora;Imputación;0;;FC-A 0001-00000009

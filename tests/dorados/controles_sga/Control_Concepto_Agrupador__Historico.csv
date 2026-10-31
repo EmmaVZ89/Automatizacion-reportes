@@ -1,0 +1,6 @@
+,,,,,,,,,,,,,,,,,
+Control Concepto Agrupador,,,,,,,,,,,,,,,,,
+Corte 2026-10-31 · 1 casos · Facturas de años anteriores. Las fechas vacías se conservan aquí para revisar.,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,
+Control,Estado,Motivo,FondoDeRiesgo,CodigoEmpresa,CUIT,RazonSocial,NumeroFactura,FechaFactura,NumeroComprobanteImputacion,FechaImputacion,Concepto,ConceptoFacturacionImputacion,GrupoConceptoFacturacion,AgrupadorEsperado,AgrupadorRequerido,AgrupadorFactura,FilaOrigen
+Imputacion fuera del agrupador permitido,REVISAR,Este concepto solo se admite para COMISIONES; la factura esta en MORA.,FONDO B,110,201100000110,Empresa 110,FI-0010,2024-02-01,RC-0010,2024-03-01,INCOBRABLES FRG,INCOBRABLES PARTICIPES - GTZ,MORA,,COMISIONES,MORA,24

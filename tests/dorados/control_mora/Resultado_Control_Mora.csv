@@ -1,0 +1,14 @@
+﻿Concepto;Valor
+Estado;REVISAR DIFERENCIA
+Saldo ERP FRG;3349,90
+Saldo SGA Mora FRG;3349,95
+Diferencia ERP menos SGA;-0,05
+Filas ERP;5
+Filas SGA;8
+Archivo ERP;Saldo de comprobación_prueba.xlsx
+Hoja ERP;Sheet1
+Archivo SGA;ReporteHistoricoDeCuentaCorriente_prueba.xlsx
+Hoja SGA;CtaCteCompleta
+Cuentas ERP (una vez cada una);113601, 113602, 113603, 113604, 113605
+Criterio SGA;"Suma de Importe con sus signos: facturas e imputaciones; sin filtrar fechas ni excluir saldos cancelados."
+Fecha de corte;La de las exportaciones. Verificar que ambos archivos correspondan al mismo corte.

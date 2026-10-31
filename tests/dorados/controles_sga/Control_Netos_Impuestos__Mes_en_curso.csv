@@ -1,0 +1,6 @@
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Control Netos Impuestos,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Corte 2026-10-31 · 1 casos · Otros agrupadores con imputaciones en 10/2026, aunque la factura sea anterior.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Control,Qué hay que corregir,CodigoEmpresa,CUIT,RazonSocial,CodigoSocio,NumeroDeAporte,Expediente,Operacion,TipoLinea,Linea,Canal,GrupoConceptoFacturacion,Concepto,NumeroFactura,FechaFactura,ConceptoFacturacionImputacion,NumeroComprobanteImputacion,FechaComprobanteImputacion,FechaImputacion,Importe,ImporteNetoGravado,PorcentajeIVA,ImporteIVA,PorcentajeIIBB,ImporteIIBB,FondoDeRiesgo,Neto esperado,Diferencia neto,IVA esperado,Diferencia IVA,IIBB esperado,Diferencia IIBB,Diferencia suma,Saldo,Saldo neto,Saldo IVA,Saldo IIBB,Fila SGA
+Neto + impuestos,Completar IVA; Corregir Neto,101,201010000101,Empresa 101,101,,E1,O1,L,1,C,OTROS,COMISION FRG,FI-0001,2026-03-10,COMISION FRG,RC-0002,2026-10-10,2026-10-10,-605.0,-605.0,,0.0,,0.0,FONDO A,-500.0,-105.0,-105.0,105.0,,,,0.0,-105.0,105.0,0.0,4

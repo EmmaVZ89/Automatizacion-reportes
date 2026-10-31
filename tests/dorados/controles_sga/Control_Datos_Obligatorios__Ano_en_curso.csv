@@ -1,0 +1,8 @@
+,,,,,,,,,,,,,,,,,,,,,
+Control Datos Obligatorios,,,,,,,,,,,,,,,,,,,,,
+"Corte 2026-10-31 · 3 casos · Facturas del año 2026. Control, estado y motivo al principio.",,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,
+Control,Estado,Motivo,TipoLineaControl,Campo,Esperado,Registrado,FondoDeRiesgo,CodigoEmpresa,CUIT,RazonSocial,NumeroFactura,FechaFactura,NumeroComprobanteImputacion,FechaImputacion,Concepto,ConceptoFacturacionImputacion,GrupoConceptoFacturacion,NumeroDeAporte,Expediente,Operacion,FilaOrigen
+Dato obligatorio faltante / Datos distintos de la factura,ERROR,Completar Operación; Corregir Operación según factura (regla propuesta),Imputación,Operación,Operación: O1,Operación: (vacío),FONDO A,101,201010000101,Empresa 101,FI-0001,2026-03-10,RC-0001,2026-04-05,COMISION FRG,COMISION FRG,COMISIONES,,E1,,3
+Regla pendiente de definir,REVISAR,Confirmar datos requeridos por el concepto,Factura,,,,FONDO A,109,201090000109,Empresa 109,FI-0009,2026-01-15,,,GASTOS VARIOS,,OTROS,,,,22
+Dato obligatorio faltante,ERROR,Completar N° de aporte,Factura,N° de aporte,,,FONDO A,113,201130000113,Empresa 113,FC-0013,2026-06-01,,,SERV. ADMINIST. FRG - 1º,,SERVICIOS,,,,27

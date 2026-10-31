@@ -1,0 +1,97 @@
+{
+  "version": "1.4",
+  "alcance_erp": "abiertos",
+  "fecha_corte": "2026-10-31",
+  "fondo": "Fondo de Riesgo General",
+  "estado": "PRUEBA PRELIMINAR - INTEGRIDAD ERP NO CONFIRMADA",
+  "salida_principal": "Conciliacion_general.xlsx",
+  "registros_datos": 8,
+  "conteos": {
+    "NO EVALUADO - ERP SOLO ABIERTOS": 1,
+    "COINCIDE": 4,
+    "SOLO EN SGA — REVISAR EN ERP": 1,
+    "SOLO EN ERP — REVISAR EN SGA": 2
+  },
+  "cobertura_salida": {
+    "SGA": {
+      "filas_fuente": 8,
+      "filas_incluidas_resultado": 8,
+      "total_fuente_exacto": "119",
+      "total_resultado_exacto": "119",
+      "total_fuente_redondeado": "119.00",
+      "suma_saldos_por_comprobante": "119.00",
+      "diferencia_redondeo": "0.00"
+    },
+    "ERP": {
+      "filas_fuente": 6,
+      "filas_incluidas_resultado": 6,
+      "total_fuente_exacto": "106",
+      "total_resultado_exacto": "106",
+      "total_fuente_redondeado": "106.00",
+      "suma_saldos_por_comprobante": "106.00",
+      "diferencia_redondeo": "0.00"
+    }
+  },
+  "fuentes": [
+    {
+      "sistema": "SGA",
+      "reporte": "Historico",
+      "archivo": "cualquier_sga.xlsx",
+      "hoja": "Original",
+      "sha256": "c51a7ddadf9b761377a44e9a2d8f3f826456f7054cb0e52d68230794efaae4f8",
+      "filas_archivo": 9,
+      "filas_incluidas": 8,
+      "total_exacto": "119",
+      "integridad": "SEGUN ARCHIVO RECIBIDO",
+      "fecha_descarga": "NO INFORMADA",
+      "tipos": {}
+    },
+    {
+      "sistema": "ERP",
+      "reporte": "ERP automático",
+      "archivo": "descarga_0.xlsx",
+      "hoja": "Datos",
+      "sha256": "6c1dac22288e9facf06edcd567b5300ad70a76b5f774a1a017d43f242cd2c631",
+      "filas_archivo": 3,
+      "filas_incluidas": 3,
+      "total_exacto": "108",
+      "integridad": "NO CONFIRMADA",
+      "fecha_descarga": "NO INFORMADA",
+      "tipos": {
+        "Cliente": 3
+      }
+    },
+    {
+      "sistema": "ERP",
+      "reporte": "ERP automático",
+      "archivo": "descarga_1.xlsx",
+      "hoja": "Datos",
+      "sha256": "d6598d3170ce5e07f96c39ea3fd48a31d31d6c1691084c446285c98a2225c030",
+      "filas_archivo": 2,
+      "filas_incluidas": 2,
+      "total_exacto": "-3",
+      "integridad": "NO CONFIRMADA",
+      "fecha_descarga": "NO INFORMADA",
+      "tipos": {
+        "Pago": 2
+      }
+    },
+    {
+      "sistema": "ERP",
+      "reporte": "ERP automático",
+      "archivo": "descarga_2.xlsx",
+      "hoja": "Datos",
+      "sha256": "846d15eef7a2d81406d7d20cdee8dc006f1fb0fe7bf9134334237daaa4049d49",
+      "filas_archivo": 1,
+      "filas_incluidas": 1,
+      "total_exacto": "1",
+      "integridad": "NO CONFIRMADA",
+      "fecha_descarga": "NO INFORMADA",
+      "tipos": {
+        "Diario general": 1
+      }
+    }
+  ],
+  "tipos_erp_ausentes": [],
+  "alertas": []
+}

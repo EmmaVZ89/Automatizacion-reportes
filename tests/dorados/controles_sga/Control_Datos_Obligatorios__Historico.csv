@@ -1,0 +1,8 @@
+,,,,,,,,,,,,,,,,,,,,,
+Control Datos Obligatorios,,,,,,,,,,,,,,,,,,,,,
+Corte 2026-10-31 · 3 casos · Facturas de años anteriores. Las fechas vacías se conservan aquí para revisar.,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,
+Control,Estado,Motivo,TipoLineaControl,Campo,Esperado,Registrado,FondoDeRiesgo,CodigoEmpresa,CUIT,RazonSocial,NumeroFactura,FechaFactura,NumeroComprobanteImputacion,FechaImputacion,Concepto,ConceptoFacturacionImputacion,GrupoConceptoFacturacion,NumeroDeAporte,Expediente,Operacion,FilaOrigen
+Regla pendiente de definir,REVISAR,Confirmar datos requeridos por el concepto,Imputación,,,,FONDO A,107,201070000107,Empresa 107,FI-P-0001,2025-09-01,FI-P-0002,2025-09-01,DEUDA POR APORTE NO VIGENTE,DEUDA POR APORTE NO VIGENTE - RDO. EJ.,APORTES,,,,17
+Regla pendiente de definir,REVISAR,Confirmar datos requeridos por el concepto,Factura,,,,FONDO A,107,201070000107,Empresa 107,FI-P-0002,2025-09-01,,,DEUDA POR APORTE NO VIGENTE,,APORTES,,,,18
+Regla pendiente de definir,REVISAR,Confirmar datos requeridos por el concepto,Imputación,,,,FONDO A,107,201070000107,Empresa 107,FI-P-0002,2025-09-01,FI-P-0001,2025-09-01,DEUDA POR APORTE NO VIGENTE,DEUDA POR APORTE NO VIGENTE,APORTES,,,,19

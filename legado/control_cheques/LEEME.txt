@@ -1,0 +1,32 @@
+﻿CONTROL DE CHEQUES
+
+1. Extraer TODO el ZIP en una carpeta.
+2. Pegar los dos archivos Excel en entrada: uno SGA y uno ERP.
+3. Abrir EJECUTAR.bat o ejecutar en la consola: py control_cheques.py
+4. Los resultados nuevos quedan en resultados, dentro de una carpeta con fecha y hora.
+No hace falta renombrar los Excel. Retirar los del cierre anterior.
+Si falta openpyxl, abrir INSTALAR_COMPONENTES.bat una sola vez. Si Windows no abre los BAT, usar los comandos de consola indicados abajo.
+
+Requiere Python y openpyxl. Si indica que falta openpyxl, ejecutar una sola vez en la consola:
+py -m pip install openpyxl
+
+Alternativa desde consola:
+py control_cheques.py --sga "CHEQUES SGA 1.xlsx" --erp "Valores ERP.xlsx"
+
+SALIDAS
+Cheques_para_revisar.csv: solo casos para revisar, separado por punto y coma, compatible con Excel.
+Resumen.txt: cantidades, archivos utilizados y alcance.
+La carpeta resultados incluida contiene la prueba con tus archivos. No modificar los archivos fuente.
+
+REGLAS
+Los ID SGA que empiezan por 563 son historicos validos y no requieren coincidencia en ERP.
+Usa IdCheque original de SGA, reemplazando solo el prefijo 10000 por gtz-. Conserva ceros.
+ERP es la referencia: Rechazado=Rechazado, Depositado=Depositado, En Cartera=Acreditado SGA.
+Canjeado es valido. Debitado, Entregado o Pagado a informado se excluyen.
+Cancelado presente en SGA se revisa, salvo que corresponda a proveedores.
+Sin ID, ID ausente en ERP, ID duplicado en ERP o estado desconocido se revisan.
+Los duplicados ERP se revisan antes de aplicar exclusiones, para no ocultar conflictos.
+
+ALCANCE
+Controla estados de filas SGA. No concilia importes ni fechas ni exige presencia en SGA de todos los cheques ERP.
+No aplica filtros por fondo ni por fecha. Lee una unica hoja con los encabezados requeridos, aunque existan otras solapas.

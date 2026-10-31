@@ -1,0 +1,39 @@
+{
+ "Control_Netos_Impuestos": {
+  "MORA": [
+   "V6",
+   "X6",
+   "AJ6",
+   "AK6"
+  ],
+  "Mes en curso": [
+   "V6",
+   "X6",
+   "AJ6",
+   "AK6"
+  ],
+  "Histórico": [
+   "U6"
+  ]
+ },
+ "Control_Datos_Obligatorios": {
+  "Año en curso": [],
+  "Histórico": []
+ },
+ "Control_Servicios_Administrativos": {
+  "Año en curso": [],
+  "Histórico": []
+ },
+ "Saldo_MORA": {
+  "Saldo por fondo": []
+ },
+ "Comprobantes_Abiertos": {
+  "Comprobantes abiertos": [
+   "H6"
+  ]
+ },
+ "Control_Concepto_Agrupador": {
+  "Año en curso": [],
+  "Histórico": []
+ }
+}

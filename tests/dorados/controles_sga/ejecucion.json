@@ -1,0 +1,71 @@
+{
+  "version_programa": "1.5",
+  "lineas": 34,
+  "fecha_corte_servicios": "2026-10-31",
+  "fondos": {
+    "FONDO A": 32,
+    "FONDO B": 2
+  },
+  "salidas": {
+    "Control_Netos_Impuestos": 3,
+    "Control_Datos_Obligatorios": 6,
+    "Control_Concepto_Agrupador": 3,
+    "Control_Servicios_Administrativos": 6,
+    "Comprobantes_Abiertos": 16,
+    "Saldo_MORA": 2
+  },
+  "observaciones_por_control": {
+    "Control_Netos_Impuestos": 3,
+    "Control_Datos_Obligatorios": 7,
+    "Control_Servicios_Administrativos": 8,
+    "Saldo_MORA": 2,
+    "Comprobantes_Abiertos": 16,
+    "Control_Concepto_Agrupador": 3
+  },
+  "control_fechas_abiertos": {
+    "Fecha no disponible en origen": 1,
+    "OK": 15
+  },
+  "comprobantes_excluidos": [
+    "CH-20190722105522839"
+  ],
+  "lineas_excluidas": 1,
+  "replica_impuestos": "Proporcion de los importes originales registrados; no usa porcentajes de SGA.",
+  "netos_consolidados": true,
+  "netos_sin_movimientos_pendientes": true,
+  "formato": "xlsx",
+  "futuros_no_exigibles_omitidos": {
+    "Control_Servicios_Administrativos": 2
+  },
+  "solapas": {
+    "Control_Netos_Impuestos": {
+      "MORA": 1,
+      "Mes en curso": 1,
+      "Histórico": 1
+    },
+    "Control_Datos_Obligatorios": {
+      "Año en curso": 3,
+      "Histórico": 3
+    },
+    "Control_Concepto_Agrupador": {
+      "Año en curso": 2,
+      "Histórico": 1
+    },
+    "Control_Servicios_Administrativos": {
+      "Año en curso": 4,
+      "Histórico": 2
+    },
+    "Comprobantes_Abiertos": {
+      "Comprobantes abiertos": 16
+    },
+    "Saldo_MORA": {
+      "Saldo por fondo": 2
+    }
+  },
+  "clasificaciones": {
+    "SIN IDENTIFICAR": 1,
+    "OPX": 1,
+    "FACTURAS INTERNAS": 14
+  },
+  "nota": "Cada salida aplica las exclusiones definidas en el manual. Fecha de corte para servicios y anulaciones. Reglas estadisticas pendientes de validar."
+}

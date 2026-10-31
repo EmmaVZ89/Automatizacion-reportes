@@ -1,0 +1,469 @@
+"""Dominio: cierres (período + fecha de corte + biblioteca de archivos), ejecuciones de reportes con
+versiones dentro del cierre, revisión (triage) y configuración. Todo en JSON bajo datos/."""
+import hashlib
+import re
+import shutil
+import threading
+import time
+from datetime import date, datetime
+from pathlib import Path
+
+from .almacen import Almacen, escribir_json_atomico, leer_json
+from .seguridad import nombre_seguro
+from .tablas import Tablas
+
+ESTADOS_EJECUCION = ('borrador', 'listo', 'corriendo', 'esperando', 'ok', 'error', 'cancelado')
+_RE_PERIODO = re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
+_RE_FECHA = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+CONFIGURACION_DEFAULT = {'tema': 'claro', 'limiteMB': 200, 'reportes': {}, 'bienvenida': False, 'version': 1}
+
+
+def _iso(t):
+    return datetime.fromtimestamp(t).strftime('%Y-%m-%dT%H:%M:%S')
+
+
+class Dominio:
+    def __init__(self, dir_datos, ahora=time.time, reconocer=None):
+        self.dir = Path(dir_datos)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.ahora = ahora
+        self._lock = threading.RLock()
+        self._cierres = Almacen(self.dir / 'cierres.json', ahora=ahora)
+        self._ejecuciones = Almacen(self.dir / 'ejecuciones.json', ahora=ahora)
+        self._reconocer = reconocer if reconocer is not None else self._reconocer_default
+        self._secuencia = 0
+
+    # ---------- utilidades ----------
+    def _id(self, prefijo):
+        self._secuencia += 1
+        return f'{prefijo}_{datetime.fromtimestamp(self.ahora()).strftime("%Y%m%d%H%M%S")}_{self._secuencia:03d}'
+
+    @staticmethod
+    def _reconocer_default(ruta):
+        from .reportes._comun import detectores
+        from .reportes._comun.entradas import resumen_archivo
+        return resumen_archivo(ruta, detectores.TODOS)
+
+    def dir_cierre(self, cierre_id):
+        return self.dir / 'cierres' / cierre_id
+
+    def rutas(self, ejecucion_id):
+        carpeta = self.dir / 'ejecuciones' / ejecucion_id
+        return {'carpeta': carpeta, 'parametros': carpeta / 'parametros.json', 'entradas': carpeta / 'entradas.json',
+                'resumen': carpeta / 'resumen.json', 'triage': carpeta / 'triage.json', 'registro': carpeta / 'registro.log',
+                'salidas': carpeta / 'salidas', 'sqlite': carpeta / 'resultados.sqlite'}
+
+    # ---------- cierres ----------
+    def listar_cierres(self):
+        with self._lock:
+            return sorted((dict(c) for c in self._cierres.entradas if not c.get('herramienta')), key=lambda c: c['periodo'], reverse=True)
+
+    def espacio_herramienta(self, codigo):
+        """Los reportes que no son del cierre mensual (Descarga de facturas) guardan sus archivos y corridas en un
+        espacio propio, con la misma forma que un cierre pero fuera de la lista de cierres. Se crea la primera vez."""
+        with self._lock:
+            existente = next((c for c in self._cierres.entradas if c.get('herramienta') == codigo), None)
+            if existente:
+                return dict(existente)
+            c = {'id': self._id('h'), 'periodo': None, 'corte': None, 'nombre': codigo, 'herramienta': codigo,
+                 'creado': _iso(self.ahora()), 'cerrado': None, 'notas': '', 'archivos': [], 'importado': False}
+            self._cierres.entradas.append(c)
+            self._cierres.guardar()
+            (self.dir_cierre(c['id']) / 'archivos').mkdir(parents=True, exist_ok=True)
+            return dict(c)
+
+    def obtener_cierre(self, cierre_id):
+        with self._lock:
+            c = self._buscar_cierre(cierre_id)
+            return dict(c) if c else None
+
+    def _buscar_cierre(self, cierre_id):
+        return next((c for c in self._cierres.entradas if c['id'] == cierre_id), None)
+
+    def crear_cierre(self, periodo, corte, nombre=''):
+        periodo = str(periodo or '').strip()
+        corte = str(corte or '').strip()
+        if not _RE_PERIODO.match(periodo):
+            raise ValueError('El período tiene que ser AAAA-MM (por ejemplo 2026-10).')
+        if not _RE_FECHA.match(corte):
+            raise ValueError('La fecha de corte tiene que ser AAAA-MM-DD.')
+        try:
+            date.fromisoformat(corte)
+        except ValueError:
+            raise ValueError('La fecha de corte no es válida.')
+        with self._lock:
+            if any(c['periodo'] == periodo for c in self._cierres.entradas):
+                raise ValueError(f'Ya existe un cierre para {periodo}.')
+            c = {'id': self._id('c'), 'periodo': periodo, 'corte': corte, 'nombre': str(nombre or '').strip()[:120] or f'Cierre {periodo}',
+                 'creado': _iso(self.ahora()), 'cerrado': None, 'notas': '', 'archivos': [], 'importado': False}
+            self._cierres.entradas.append(c)
+            self._cierres.guardar()
+            (self.dir_cierre(c['id']) / 'archivos').mkdir(parents=True, exist_ok=True)
+            return dict(c)
+
+    def editar_cierre(self, cierre_id, **campos):
+        with self._lock:
+            c = self._buscar_cierre(cierre_id)
+            if not c:
+                raise KeyError('No existe ese cierre.')
+            for k, v in campos.items():
+                if k == 'corte':
+                    if not _RE_FECHA.match(str(v)):
+                        raise ValueError('La fecha de corte tiene que ser AAAA-MM-DD.')
+                    c['corte'] = str(v)
+                elif k == 'nombre':
+                    c['nombre'] = str(v or '').strip()[:120] or c['nombre']
+                elif k == 'notas':
+                    c['notas'] = str(v or '')[:5000]
+                elif k == 'cerrado':
+                    c['cerrado'] = _iso(self.ahora()) if v else None
+            self._cierres.guardar()
+            return dict(c)
+
+    def borrar_cierre(self, cierre_id, forzar=False):
+        with self._lock:
+            c = self._buscar_cierre(cierre_id)
+            if not c:
+                raise KeyError('No existe ese cierre.')
+            ejecuciones = [e for e in self._ejecuciones.entradas if e['cierreId'] == cierre_id]
+            if any(e.get('final') for e in ejecuciones) and not forzar:
+                raise ValueError('Este cierre tiene resultados finales. Para borrarlo igual, confirmá que querés perderlos.')
+            for e in ejecuciones:
+                self._borrar_carpeta(self.rutas(e['id'])['carpeta'])
+                self._ejecuciones.entradas.remove(e)
+            self._ejecuciones.guardar()
+            self._cierres.entradas.remove(c)
+            self._cierres.guardar()
+            self._borrar_carpeta(self.dir_cierre(cierre_id))
+
+    @staticmethod
+    def _borrar_archivo_fisico(ruta):
+        if not ruta:
+            return
+        p = Path(ruta)
+        p.unlink(missing_ok=True)
+        try:
+            p.parent.rmdir()
+        except OSError:
+            pass
+
+    @staticmethod
+    def _borrar_carpeta(ruta):
+        if ruta.exists():
+            shutil.rmtree(ruta, ignore_errors=True)
+
+    # ---------- archivos del cierre ----------
+    def archivos_de(self, cierre_id):
+        c = self.obtener_cierre(cierre_id)
+        if not c:
+            raise KeyError('No existe ese cierre.')
+        return list(c['archivos'])
+
+    def agregar_archivo(self, cierre_id, nombre, origen=None, bytes_iter=None, reconocer=True):
+        """Copia el archivo a archivos/<sha8>/<nombre original> (los motores usan el nombre tal cual en sus salidas). Mismo contenido ⇒ devuelve el existente."""
+        with self._lock:
+            c = self._buscar_cierre(cierre_id)
+            if not c:
+                raise KeyError('No existe ese cierre.')
+        nombre = nombre_seguro(nombre)
+        carpeta = self.dir_cierre(cierre_id) / 'archivos'
+        carpeta.mkdir(parents=True, exist_ok=True)
+        parcial = carpeta / (f'.parcial-{self._id("a")}')
+        h = hashlib.sha256()
+        total = 0
+        try:
+            with parcial.open('wb') as destino:
+                if origen is not None:
+                    with Path(origen).open('rb') as f:
+                        for bloque in iter(lambda: f.read(1024 * 1024), b''):
+                            h.update(bloque)
+                            total += len(bloque)
+                            destino.write(bloque)
+                else:
+                    for bloque in bytes_iter:
+                        h.update(bloque)
+                        total += len(bloque)
+                        destino.write(bloque)
+            sha = h.hexdigest()
+            with self._lock:
+                c = self._buscar_cierre(cierre_id)
+                existente = next((a for a in c['archivos'] if a['sha256'] == sha), None)
+                if existente:
+                    parcial.unlink(missing_ok=True)
+                    return dict(existente)
+                final = carpeta / sha[:8] / nombre
+                final.parent.mkdir(parents=True, exist_ok=True)
+                parcial.replace(final)
+                archivo = {'id': self._id('a'), 'nombre': nombre, 'bytes': total, 'sha256': sha, 'ruta': str(final),
+                           'subido': _iso(self.ahora()), 'tipo': None, 'hoja': None, 'filas': None, 'aviso': None, 'error': None}
+            if reconocer:
+                try:
+                    r = self._reconocer(final)
+                    archivo.update({'tipo': r.get('tipo'), 'hoja': r.get('hoja'), 'filas': r.get('filas'), 'aviso': r.get('aviso')})
+                except Exception as e:  # el archivo queda, con el motivo
+                    archivo['error'] = str(e)
+            with self._lock:
+                c = self._buscar_cierre(cierre_id)
+                c['archivos'].append(archivo)
+                self._cierres.guardar()
+            return dict(archivo)
+        finally:
+            parcial.unlink(missing_ok=True)
+
+    def obtener_archivo(self, cierre_id, archivo_id):
+        for a in self.archivos_de(cierre_id):
+            if a['id'] == archivo_id:
+                return a
+        raise KeyError('No existe ese archivo en el cierre.')
+
+    def _referencias(self, archivo_id):
+        return [e for e in self._ejecuciones.entradas if any(archivo_id in ids for ids in (e.get('entradas') or {}).values())]
+
+    def quitar_archivo(self, cierre_id, archivo_id):
+        with self._lock:
+            c = self._buscar_cierre(cierre_id)
+            if not c:
+                raise KeyError('No existe ese cierre.')
+            a = next((x for x in c['archivos'] if x['id'] == archivo_id), None)
+            if not a:
+                raise KeyError('No existe ese archivo en el cierre.')
+            refs = self._referencias(archivo_id)
+            if refs:
+                raise ValueError('Ese archivo lo usa una ejecución de este cierre; no se puede quitar.')
+            c['archivos'].remove(a)
+            self._cierres.guardar()
+            self._borrar_archivo_fisico(a['ruta'])
+
+    def limpiar_archivos_no_referenciados(self, cierre_id=None):
+        """Borra de la biblioteca lo que ninguna ejecución final usa. Devuelve bytes liberados."""
+        liberados = 0
+        with self._lock:
+            for c in self._cierres.entradas:
+                if cierre_id and c['id'] != cierre_id:
+                    continue
+                finales = [e for e in self._ejecuciones.entradas if e['cierreId'] == c['id'] and e.get('final')]
+                usados = {aid for e in finales for ids in (e.get('entradas') or {}).values() for aid in ids}
+                activos = [e for e in self._ejecuciones.entradas if e['cierreId'] == c['id'] and e['estado'] in ('corriendo', 'esperando', 'borrador', 'listo')]
+                usados |= {aid for e in activos for ids in (e.get('entradas') or {}).values() for aid in ids}
+                for a in list(c['archivos']):
+                    if a['id'] in usados:
+                        continue
+                    liberados += a.get('bytes', 0)
+                    self._borrar_archivo_fisico(a['ruta'])
+                    c['archivos'].remove(a)
+            self._cierres.guardar()
+        return liberados
+
+    # ---------- ejecuciones ----------
+    def _buscar_ejecucion(self, ejecucion_id):
+        return next((e for e in self._ejecuciones.entradas if e['id'] == ejecucion_id), None)
+
+    def listar_ejecuciones(self, cierre_id=None, reporte=None):
+        with self._lock:
+            lista = [dict(e) for e in self._ejecuciones.entradas
+                     if (cierre_id is None or e['cierreId'] == cierre_id) and (reporte is None or e['reporte'] == reporte)]
+        return sorted(lista, key=lambda e: e['creado'], reverse=True)
+
+    def obtener_ejecucion(self, ejecucion_id):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            return dict(e) if e else None
+
+    def crear_ejecucion(self, cierre_id, reporte):
+        with self._lock:
+            if not self._buscar_cierre(cierre_id):
+                raise KeyError('No existe ese cierre.')
+            version = max((e['version'] for e in self._ejecuciones.entradas if e['cierreId'] == cierre_id and e['reporte'] == reporte), default=0) + 1
+            e = {'id': self._id('e'), 'cierreId': cierre_id, 'reporte': reporte, 'version': version, 'estado': 'borrador',
+                 'creado': _iso(self.ahora()), 'inicio': None, 'fin': None, 'parametros': {}, 'entradas': {},
+                 'resumen': None, 'salidas': [], 'revision': {'pendientes': 0, 'revisadas': 0, 'omitidas': 0},
+                 'trabajoId': None, 'final': False, 'error': None, 'traslado': None}
+            self._ejecuciones.entradas.append(e)
+            self._ejecuciones.guardar()
+            self.rutas(e['id'])['carpeta'].mkdir(parents=True, exist_ok=True)
+            return dict(e)
+
+    def asignar_entradas(self, ejecucion_id, entradas):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            c = self._buscar_cierre(e['cierreId'])
+            ids_validos = {a['id'] for a in c['archivos']}
+            limpio = {}
+            for clave, ids in (entradas or {}).items():
+                ids = [str(i) for i in (ids or [])]
+                malos = [i for i in ids if i not in ids_validos]
+                if malos:
+                    raise ValueError('Uno de los archivos elegidos ya no está en el cierre.')
+                limpio[str(clave)] = ids
+            e['entradas'] = limpio
+            self._ejecuciones.guardar()
+            return dict(e)
+
+    def asignar_parametros(self, ejecucion_id, parametros):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            e['parametros'] = dict(parametros or {})
+            self._ejecuciones.guardar()
+            escribir_json_atomico(self.rutas(ejecucion_id)['parametros'], e['parametros'])
+            return dict(e)
+
+    def actualizar_estado(self, ejecucion_id, estado, **campos):
+        if estado not in ESTADOS_EJECUCION:
+            raise ValueError('Estado no válido.')
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            e['estado'] = estado
+            for k, v in campos.items():
+                e[k] = v
+            if estado == 'corriendo' and not e.get('inicio'):
+                e['inicio'] = _iso(self.ahora())
+            if estado in ('ok', 'error', 'cancelado'):
+                e['fin'] = _iso(self.ahora())
+            self._ejecuciones.guardar()
+            return dict(e)
+
+    def marcar_final(self, ejecucion_id, valor=True):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            if valor and e['estado'] != 'ok':
+                raise ValueError('Sólo una ejecución terminada puede ser el resultado final.')
+            if valor:
+                for otra in self._ejecuciones.entradas:
+                    if otra['cierreId'] == e['cierreId'] and otra['reporte'] == e['reporte']:
+                        otra['final'] = False
+            e['final'] = bool(valor)
+            self._ejecuciones.guardar()
+            return dict(e)
+
+    def borrar_ejecucion(self, ejecucion_id, forzar=False):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            if e.get('final') and not forzar:
+                raise ValueError('Es el resultado final del cierre. Para borrarlo igual, confirmá que querés perderlo.')
+            if e['estado'] in ('corriendo', 'esperando'):
+                raise ValueError('Está corriendo: cancelala antes de borrarla.')
+            self._ejecuciones.entradas.remove(e)
+            self._ejecuciones.guardar()
+            self._borrar_carpeta(self.rutas(ejecucion_id)['carpeta'])
+
+    def version_anterior(self, ejecucion_id):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            previas = [x for x in self._ejecuciones.entradas if x['cierreId'] == e['cierreId'] and x['reporte'] == e['reporte']
+                       and x['version'] < e['version'] and x['estado'] == 'ok']
+            return dict(max(previas, key=lambda x: x['version'])) if previas else None
+
+    # ---------- revisión ----------
+    def tablas(self, ejecucion_id):
+        return Tablas(self.rutas(ejecucion_id)['sqlite'], ahora=self.ahora)
+
+    def tablas_informativas(self, ejecucion_id):
+        """Tablas de la ejecución que son sólo informativas (no suman a la revisión), según la definición del reporte."""
+        e = self.obtener_ejecucion(ejecucion_id)
+        if not e:
+            return set()
+        from . import catalogo
+        try:
+            d = catalogo.obtener(e['reporte'])
+        except KeyError:
+            return set()
+        return {s['tabla'] for s in d['salidas'] if s.get('revisable') is False}
+
+    def guardar_triage(self, ejecucion_id):
+        t = self.tablas(ejecucion_id)
+        triage = t.triage()
+        escribir_json_atomico(self.rutas(ejecucion_id)['triage'], triage)
+        resumen = t.resumen_revision(self.tablas_informativas(ejecucion_id))
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if e:
+                e['revision'] = resumen
+                self._ejecuciones.guardar()
+        return resumen
+
+    def resumen_revision(self, ejecucion_id):
+        return self.tablas(ejecucion_id).resumen_revision(self.tablas_informativas(ejecucion_id))
+
+    def trasladar_revision(self, ejecucion_id):
+        anterior = self.version_anterior(ejecucion_id)
+        if not anterior:
+            return {'aplicadas': 0, 'sin_destino': 0, 'desde': None}
+        triage = leer_json(self.rutas(anterior['id'])['triage'], {}) or {}
+        r = self.tablas(ejecucion_id).aplicar_triage(triage, origen='version')
+        r['desde'] = anterior['version']
+        self.guardar_triage(ejecucion_id)
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if e:
+                e['traslado'] = r
+                self._ejecuciones.guardar()
+        return r
+
+    def traer_revision_cierre_anterior(self, ejecucion_id):
+        with self._lock:
+            e = self._buscar_ejecucion(ejecucion_id)
+            if not e:
+                raise KeyError('No existe esa ejecución.')
+            c = self._buscar_cierre(e['cierreId'])
+            if c.get('herramienta'):
+                return {'aplicadas': 0, 'sin_destino': 0, 'desde': None}
+            anteriores = [x for x in self._cierres.entradas if not x.get('herramienta') and x['periodo'] < c['periodo']]
+            if not anteriores:
+                return {'aplicadas': 0, 'sin_destino': 0, 'desde': None}
+            previo = max(anteriores, key=lambda x: x['periodo'])
+            candidatas = [x for x in self._ejecuciones.entradas if x['cierreId'] == previo['id'] and x['reporte'] == e['reporte'] and x['estado'] == 'ok']
+            if not candidatas:
+                return {'aplicadas': 0, 'sin_destino': 0, 'desde': previo['periodo']}
+            finales = [x for x in candidatas if x.get('final')]
+            origen = (finales or sorted(candidatas, key=lambda x: x['version']))[-1]
+        triage = leer_json(self.rutas(origen['id'])['triage'], {}) or {}
+        r = self.tablas(ejecucion_id).aplicar_triage(triage, origen='cierre', solo_estados=('omitida',))
+        r['desde'] = previo['periodo']
+        self.guardar_triage(ejecucion_id)
+        return r
+
+    # ---------- configuración ----------
+    def leer_configuracion(self):
+        conf = leer_json(self.dir / 'configuracion.json', None)
+        base = {k: (dict(v) if isinstance(v, dict) else v) for k, v in CONFIGURACION_DEFAULT.items()}
+        if isinstance(conf, dict):
+            for k, v in conf.items():
+                base[k] = v
+        return base
+
+    def guardar_configuracion(self, cambios):
+        with self._lock:
+            conf = self.leer_configuracion()
+            for k, v in (cambios or {}).items():
+                if k == 'tema':
+                    if v in ('claro', 'oscuro'):
+                        conf['tema'] = v
+                elif k == 'limiteMB':
+                    try:
+                        conf['limiteMB'] = max(10, min(2000, int(v)))
+                    except (TypeError, ValueError):
+                        pass
+                elif k == 'bienvenida':
+                    conf['bienvenida'] = bool(v)
+                elif k == 'reportes' and isinstance(v, dict):
+                    conf.setdefault('reportes', {})
+                    for codigo, datos in v.items():
+                        if isinstance(datos, dict):
+                            actual = conf['reportes'].setdefault(codigo, {})
+                            for clave in ('parametros', 'reglas'):
+                                if clave in datos and isinstance(datos[clave], dict):
+                                    actual[clave] = datos[clave]
+            escribir_json_atomico(self.dir / 'configuracion.json', conf)
+            return conf

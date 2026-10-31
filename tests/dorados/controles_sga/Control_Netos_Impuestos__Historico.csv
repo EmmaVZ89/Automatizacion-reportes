@@ -1,0 +1,6 @@
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Control Netos Impuestos,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Corte 2026-10-31 · 1 casos · Otros agrupadores sin imputaciones en el mes de corte. Los saldos son contexto; no sumarlos entre filas de una misma factura.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Control,Qué hay que corregir,CodigoEmpresa,CUIT,RazonSocial,CodigoSocio,NumeroDeAporte,Expediente,Operacion,TipoLinea,Linea,Canal,GrupoConceptoFacturacion,Concepto,NumeroFactura,FechaFactura,ConceptoFacturacionImputacion,NumeroComprobanteImputacion,FechaComprobanteImputacion,FechaImputacion,Importe,ImporteNetoGravado,PorcentajeIVA,ImporteIVA,PorcentajeIIBB,ImporteIIBB,FondoDeRiesgo,Neto esperado,Diferencia neto,IVA esperado,Diferencia IVA,IIBB esperado,Diferencia IIBB,Diferencia suma,Saldo,Saldo neto,Saldo IVA,Saldo IIBB,Fila SGA
+Neto + impuestos,Revisar suma Neto + IVA + IIBB,116,201160000116,Empresa 116,116,,E16,O16,L,1,C,COMISIONES,COMISION FRG,FI-0016,2025-11-01,,,,,1210.0,1000.0,21.0,200.0,,0.0,FONDO A,,,,,,,10.0,1210.0,1000.0,200.0,0.0,31

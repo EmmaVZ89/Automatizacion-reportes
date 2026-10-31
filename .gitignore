@@ -1,0 +1,10 @@
+# Datos de uso (cierres, archivos subidos, resultados, sesión de Chrome): nunca al repositorio.
+datos/
+.venv/
+__pycache__/
+*.pyc
+*.sqlite
+sesion_chrome/
+dist/
+tests/_tmp/
+tests/palabras_prohibidas.txt

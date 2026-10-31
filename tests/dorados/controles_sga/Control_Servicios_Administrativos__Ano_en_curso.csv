@@ -1,0 +1,9 @@
+,,,,,,,,,,,,,,,
+Control Servicios Administrativos,,,,,,,,,,,,,,,
+Corte 2026-10-31 · 4 casos · Segundo servicio correspondiente a 2026. Sin primer visible: se clasifica por fecha del segundo.,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+Control,Estado,Motivo,FondoDeRiesgo,CodigoEmpresa,CUIT,RazonSocial,NumeroDeAporte,Factura primero,Fecha primero,Factura segundo,Fecha segundo,Mes esperado,NC aplicada,Importe NC,FilaOrigen
+Segundo servicio,OK_HISTORICO,Existe segundo servicio; se acepta desfase historico.,FONDO A,103,201030000103,Empresa 103,A103,FC-0003,2025-02-15,FC-0004,2026-02-20,2026-02,,,7
+Segundo servicio,FALTANTE_HISTORICO,No hay segundo servicio emitido al corte.,FONDO A,104,201040000104,Empresa 104,A104,FC-0005,2025-01-10,,,2026-01,,,10
+Factura anulada por NC,ANULADA POR NC,Anulada totalmente por NC aplicada; no cuenta como servicio vigente ni duplicado.,FONDO A,104,201040000104,Empresa 104,A106,FC-0007,2025-08-01,,,,NC-0002,-605.0,12
+Segundo servicio,FUERA_DE_TERMINO,Segundo servicio emitido fuera del mes correspondiente.,FONDO A,112,201120000112,Empresa 112,A112,FC-0011,2025-10-05,FC-0012,2026-09-20,2026-10,,,25

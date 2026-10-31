@@ -1,0 +1,5 @@
+REVISAR DIFERENCIA
+ERP: 3,349.90
+SGA: 3,349.95
+Diferencia ERP - SGA: -0.05
+Filas SGA: 8

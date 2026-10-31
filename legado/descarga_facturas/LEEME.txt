@@ -1,0 +1,44 @@
+DESCARGA DIRECTA POR LISTADO EXCEL - VERSION 6
+
+1. Extrae el ZIP en una ruta corta de tu computadora, fuera de la carpeta
+   sincronizada de SharePoint. Por ejemplo, una carpeta FacturasListado
+   dentro de tu carpeta de usuario. No copies sesion_chrome ni .venv anteriores.
+2. Abri INSTALAR.bat una vez: esta version agrega openpyxl para leer Excel.
+3. El listado Libro4FACS.xlsx ya esta dentro de Entrada para la primera prueba.
+4. Abri EJECUTAR.bat. Debe decir VERSION 6 y mostrar 35 facturas unicas.
+5. Desde: 12/10/2026. Hasta: 18/10/2026. Concepto: Enter para todos.
+6. Carpeta destino: Enter mantiene 20 FACTURAS. Si cambiaste su nombre,
+   pega la ruta completa de la carpeta existente.
+7. Inicia sesion en Chrome. Cuando veas Comprobantes, volve a la consola
+   y presiona SOLO ENTER. No cierres Chrome durante la descarga.
+8. Revisa el resumen y el CSV de resultados. Si hay errores, la descarga
+   queda incompleta y el CSV identifica cada factura pendiente.
+
+USO SIGUIENTE
+Deja en Entrada solo los listados que quieras procesar. El nombre del Excel
+puede variar. Acepta .xlsx y .xlsm, no .xls. Lee todas las hojas que tengan
+encabezados reconocidos en las primeras 100 filas, incluso hojas ocultas.
+Columnas obligatorias: CUIT y NumeroFactura. Pueden cambiar de posicion.
+Reconoce variantes como CUIT del cliente, Numero de factura o Comprobante.
+Si hay dos columnas posibles para el mismo dato, pide corregir la ambiguedad.
+Las filas con datos faltantes/invalidos se registran en entrada_a_revisar.
+Los CUIT numericos y con guiones se normalizan; no se inventan digitos faltantes.
+Una misma combinacion de CUIT y factura se descarga una sola vez por ejecucion.
+
+Si el listado ya contiene el periodo deseado, podes dejar ambas fechas vacias
+para procesar todos los comprobantes listados. El filtro opcional de fechas usa
+la emision dentro del PDF. Concepto tambien se lee del PDF, no del Excel.
+Destino: AAAA-MM / concepto / factura.pdf. Los originales no se modifican.
+Conceptos diferentes en un PDF: Varios conceptos. Sin concepto: Para revisar.
+Mismo nombre con otro contenido: CONFLICTO, no sobrescribe.
+
+Esta version NO recorre el historico. Construye la direccion directa con el
+CUIT y NumeroFactura del listado, siguiendo la ruta comprobada en tu biblioteca.
+Si una factura no esta en esa ubicacion, informa el error y sigue con las demas.
+La lectura del Excel se verifico con las 35 facturas del ejemplo y con columnas
+reordenadas, duplicados y faltantes. La ejecucion masiva autenticada debe
+validarse en tu computadora; no se afirma que las 35 esten disponibles.
+
+La subida de los PDF a SharePoint requiere OneDrive sincronizando destino.
+El programa se ejecuta manualmente. sesion_chrome contiene la sesion laboral:
+no compartas esa carpeta. Instala el programa fuera de carpetas compartidas.

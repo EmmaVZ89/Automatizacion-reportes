@@ -1,0 +1,13 @@
+Control;Saldo SGA;Saldo ERP;Diferencia;Resultado / cantidad;Detalle
+TOTAL GENERAL POR COMPROBANTE;119.0;106.0;13.0;TOTAL INFORMATIVO;Suma del detalle de Conciliación general. Estos totales se muestran solo en Resumen. No certifica integridad ni resuelve ausentes.
+TOTAL FUENTES RECIBIDAS;119.0;106.0;13.0;TOTAL INFORMATIVO;Totales calculados desde todas las filas incluidas de los originales.
+DIFERENCIA DE REDONDEO;0.0;0.0;;CONTROL DE REDONDEO;"Total fuente redondeado menos suma de saldos redondeados por comprobante; no se oculta ni se ajusta."
+COBERTURA DE MOVIMIENTOS;;;;TODOS LOS MOVIMIENTOS INCLUIDOS;SGA: 8 filas. ERP: 6 filas. Cada fila se incluyó una sola vez en el resultado.
+ALCANCE Y CORTE;;;;PRUEBA PRELIMINAR;ERP: abiertos. Corte declarado: 2026-10-31. Integridad ERP no confirmada. El corte no reconstruye saldos históricos.
+CANTIDAD: COINCIDE;;;;5;"Cantidad de filas de datos de este resultado; no incluye controles."
+CANTIDAD: DIFERENCIA;;;;1;"Cantidad de filas de datos de este resultado; no incluye controles."
+CANTIDAD: SOLO EN ERP — REVISAR EN SGA;;;;2;"Cantidad de filas de datos de este resultado; no incluye controles."
+FUENTE SGA;;;;;cualquier_sga.xlsx / hoja Original / filas incluidas 8 / SHA256 c51a7ddadf9b761377a44e9a2d8f3f826456f7054cb0e52d68230794efaae4f8
+FUENTE ERP;;;;;descarga_0.xlsx / hoja Datos / filas incluidas 3 / SHA256 6c1dac22288e9facf06edcd567b5300ad70a76b5f774a1a017d43f242cd2c631
+FUENTE ERP;;;;;descarga_1.xlsx / hoja Datos / filas incluidas 2 / SHA256 d6598d3170ce5e07f96c39ea3fd48a31d31d6c1691084c446285c98a2225c030
+FUENTE ERP;;;;;descarga_2.xlsx / hoja Datos / filas incluidas 1 / SHA256 846d15eef7a2d81406d7d20cdee8dc006f1fb0fe7bf9134334237daaa4049d49

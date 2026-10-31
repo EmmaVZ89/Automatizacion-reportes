@@ -1,0 +1,6 @@
+﻿ArchivoOrigen;HojaOrigen;FilaOrigen;MainAccount;MainAccountName;BusinessUnit;Saldo inicial;Débito;Crédito;Saldo de cierre
+Saldo de comprobación_prueba.xlsx;Sheet1;3;113601;Mora cuenta 1;FRG;1000,5;200;50,25;1150,25
+Saldo de comprobación_prueba.xlsx;Sheet1;4;113602;Mora cuenta 2;frg ;0;0;0;2500,1
+Saldo de comprobación_prueba.xlsx;Sheet1;5;113603;Mora cuenta 3;FRG;-300,75;;;-300,75
+Saldo de comprobación_prueba.xlsx;Sheet1;6;113604;Mora cuenta 4;FRG;0,1;0;0;0,1
+Saldo de comprobación_prueba.xlsx;Sheet1;7;113605;Mora cuenta 5;FRG;0,2;0;0;0,2

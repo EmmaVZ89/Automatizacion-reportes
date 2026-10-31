@@ -1,0 +1,6 @@
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Control Netos Impuestos,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Corte 2026-10-31 · 1 casos · MORA de todos los años. Anaranjado: celda observada. Columnas SGA originales sin modificar.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Control,Qué hay que corregir,CodigoEmpresa,CUIT,RazonSocial,CodigoSocio,NumeroDeAporte,Expediente,Operacion,TipoLinea,Linea,Canal,GrupoConceptoFacturacion,Concepto,NumeroFactura,FechaFactura,ConceptoFacturacionImputacion,NumeroComprobanteImputacion,FechaComprobanteImputacion,FechaImputacion,Importe,ImporteNetoGravado,PorcentajeIVA,ImporteIVA,PorcentajeIIBB,ImporteIIBB,FondoDeRiesgo,Neto esperado,Diferencia neto,IVA esperado,Diferencia IVA,IIBB esperado,Diferencia IIBB,Diferencia suma,Saldo,Saldo neto,Saldo IVA,Saldo IIBB,Fila SGA
+Neto + impuestos,Corregir Neto + IVA,105,201050000105,Empresa 105,105,,E5,O5,L,1,C,MORA,INTERESES MORA,FI-0008,2024-06-01,INTERESES MORA,RC-0005,2024-07-01,2024-07-01,-40.0,-30.0,21.0,-10.0,,0.0,FONDO A,-40.0,10.0,-0.0,-10.0,,,,60.0,70.0,-10.0,0.0,15
