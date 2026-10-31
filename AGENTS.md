@@ -15,7 +15,7 @@ Diseño: `docs/superpowers/specs/2026-10-31-herramienta-cierre-design.md`. Plan:
 
 ## Arquitectura
 
-- **Python 3.10+, sólo biblioteca estándar** + `vendor/` (openpyxl y et_xmlfile, puro Python; ver `vendor/VERSIONES.md`).
+- **Python 3.10+, solo biblioteca estándar** + `vendor/` (openpyxl y et_xmlfile, puro Python; ver `vendor/VERSIONES.md`).
   Sin `pip install` para los cuatro controles. La Descarga de facturas necesita un `.venv` (`Instalar descarga de
   facturas.bat`, `requirements-facturas.txt`) con Playwright y pdfplumber, y el Chrome de la PC.
 - `app/arranque.py`: carpeta de datos (`%LOCALAPPDATA%\ReportesDeCierre\datos` o `REPORTES_DATOS`), instancia única
