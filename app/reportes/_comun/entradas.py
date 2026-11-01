@@ -169,6 +169,28 @@ def aviso_recorte(filas):
     return None
 
 
+def valores_columna(path, hoja, columna, max_filas=400):
+    """Los valores no vacíos de una columna (por su encabezado) en las primeras filas de una hoja: una muestra rápida,
+    sin leer el libro entero."""
+    with ZipFile(Path(path)) as z:
+        destino = next((d for nombre, d in _hojas(z) if nombre == hoja), None)
+        if destino is None:
+            return []
+        filas = _primeras_filas(z, destino, max_filas)
+        maximo = max((int(v) for _, celdas in filas for t, v in celdas.values() if t == 's' and v.isdigit()), default=-1)
+        cadenas = _cadenas_compartidas(z, maximo)
+        indice = None
+        salida = []
+        for _, celdas in filas:
+            valores = {i: str((cadenas[int(v)] if v.isdigit() and int(v) < len(cadenas) else '') if t == 's' else v or '').strip()
+                       for i, (t, v) in celdas.items()}
+            if indice is None:
+                indice = next((i for i, x in valores.items() if x == columna), None)
+            elif valores.get(indice):
+                salida.append(valores[indice])
+        return salida
+
+
 def resumen_archivo(path, detectores):
     """Lo que la interfaz muestra de un archivo: tipo, hoja, filas aproximadas y aviso."""
     hojas = encabezados_xlsx(path)

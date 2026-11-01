@@ -30,6 +30,22 @@ ALIAS_LISTADO = {
 }
 
 
+# Fondos de riesgo de la conciliación. El ERP no trae una columna de fondo: se reconoce por el prefijo de sus asientos
+# (FERF Prov. Santa Fe: "SaFe…"; Fondo General: "Ventas-…"). En el histórico de SGA el fondo es la columna FondoDeRiesgo.
+FONDO_GENERAL = 'Fondo de Riesgo General'
+FONDO_SANTA_FE = 'FERF Prov. Santa Fe'
+PREFIJOS_FONDO = (('SaFe', FONDO_SANTA_FE), ('Ventas-', FONDO_GENERAL))
+MEZCLA_DE_FONDOS = 'mezcla'
+
+
+def fondo_por_asientos(asientos):
+    """El fondo de unas transacciones del ERP por sus asientos: None si no se sabe, MEZCLA_DE_FONDOS si hay de los dos."""
+    vistos = {fondo for a in asientos for prefijo, fondo in PREFIJOS_FONDO if str(a).startswith(prefijo)}
+    if not vistos:
+        return None
+    return vistos.pop() if len(vistos) == 1 else MEZCLA_DE_FONDOS
+
+
 def historico_sga(hojas):
     return _tiene(hojas, COLUMNAS_HISTORICO_SGA)
 

@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from . import catalogo
@@ -45,7 +46,7 @@ class Origenes:
         self.dominio = dominio
         self.registro = registro
         self.bus = bus  # avisa el avance a la pantalla (visor de tareas)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # reentrante: tomarlo dos veces en el mismo hilo no traba
         self._en_curso = {}  # ejecucion_id -> {'progreso': float, 'error': str | None}
         self._por_copia = {}  # ruta de la copia -> candado (dos versiones pueden usar el mismo archivo)
 
@@ -124,11 +125,15 @@ class Origenes:
             return {'disponible': True, 'listo': False, 'preparando': False, 'error': str(err)}
         if not faltan:
             return self.estado(e)
+        # El estado se pide después de soltar el candado: estado() lo toma, y pedirlo adentro trababa la herramienta
+        # entera cuando la pantalla pedía la copia mientras se armaba (la que arranca sola al terminar la corrida).
         with self._lock:
             actual = self._en_curso.get(e['id'])
-            if actual and not actual.get('error'):
-                return self.estado(e)
-            self._en_curso[e['id']] = {'progreso': 0.0, 'error': None}
+            ya_en_curso = bool(actual) and not actual.get('error')
+            if not ya_en_curso:
+                self._en_curso[e['id']] = {'progreso': 0.0, 'error': None}
+        if ya_en_curso:
+            return self.estado(e)
         self._avisar(e['id'], progreso=0.0)
         threading.Thread(target=self._construir, args=(e['id'], faltan), daemon=True).start()
         return self.estado(e)
@@ -136,6 +141,9 @@ class Origenes:
     def _construir(self, ejecucion_id, faltan):
         total = sum(max(1, n['xlsx'].stat().st_size) for n in faltan)
         hecho = 0
+        inicio = time.time()
+        if self.registro:
+            self.registro.info('Excel de origen de %s: se copian %s hoja(s), %.0f MB', ejecucion_id, len(faltan), total / 1e6)
         try:
             for n in faltan:
                 peso = max(1, n['xlsx'].stat().st_size)
@@ -147,6 +155,8 @@ class Origenes:
                 hecho += peso
             with self._lock:
                 self._en_curso.pop(ejecucion_id, None)
+            if self.registro:
+                self.registro.info('Excel de origen de %s: listo en %.0f s', ejecucion_id, time.time() - inicio)
             self._avisar(ejecucion_id, progreso=1.0, listo=True)
         except Exception as err:  # el detalle va al registro; la pantalla muestra un texto llano
             if self.registro:

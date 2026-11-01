@@ -3,6 +3,7 @@
 Copia de legado/conciliacion_general/excel_general.py. Los lectores del CSV (`filas_resumen`,
 `filas_detalle`) se exponen aparte para que ejecutar.py vuelque las mismas filas a sqlite."""
 import csv
+from datetime import date
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 from xml.sax.saxutils import escape
@@ -30,7 +31,21 @@ def clean(value):
     # XML 1.0 no admite caracteres de control. Texto explícito: nunca fórmula.
     return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', str(value))[:32767]
 
-def sheet(z, name, rows, numeric, widths, filter_rows=False):
+# Columnas del detalle por nombre (no por posición): así sirve también para los CSV de antes de las fechas.
+IMPORTES = ('Saldo SGA', 'Saldo ERP', 'Diferencia SGA menos ERP')
+NUMERICAS = IMPORTES + ('Filas SGA', 'Filas ERP')
+FECHAS = ('Fecha SGA', 'Fecha ERP')
+ANCHOS = {'Tipo': 20, 'Cliente': 14, 'Fecha SGA': 12, 'Fecha ERP': 12, 'Comprobante': 30, 'CUIT': 18, 'Razon social': 45,
+          'Saldo SGA': 24, 'Saldo ERP': 24, 'Diferencia SGA menos ERP': 26, 'Resultado': 48, 'Filas SGA': 12, 'Filas ERP': 12,
+          'Origen SGA (primeras 5)': 55, 'Origen ERP (primeras 5)': 55, 'Estado revision': 25, 'Observaciones': 65, 'Fondo': 30,
+          'Detalle identificacion': 55}
+EXCEL_CERO = date(1899, 12, 30)
+
+def encabezado(csv_path):
+    with Path(csv_path).open(encoding='utf-8-sig', newline='') as f:
+        return next(csv.reader(f, delimiter=';'))
+
+def sheet(z, name, rows, numeric, widths, filter_rows=False, dates=(), money=(6, 7, 8)):
     with z.open(name, 'w') as stream:
         def write(s): stream.write(s.encode('utf-8'))
         write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
@@ -45,11 +60,14 @@ def sheet(z, name, rows, numeric, widths, filter_rows=False):
             for i, value in enumerate(row, 1):
                 if value == '' or value is None: continue
                 ref = column(i)+str(count)
-                if count > 1 and i in numeric:
+                if count > 1 and i in dates and re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(value)):
+                    # fecha real (número de serie con formato de fecha): se ordena y filtra como fecha en Excel
+                    write(f'<c r="{ref}" s="4" t="n"><v>{(date.fromisoformat(value) - EXCEL_CERO).days}</v></c>')
+                elif count > 1 and i in numeric:
                     # Únicamente columnas generadas por el cálculo; no inferir IDs.
                     if not re.fullmatch(r'-?\d+(?:\.\d+)?', str(value)):
                         raise ValueError(f'Número inválido en {name} {ref}')
-                    write(f'<c r="{ref}" s="{2 if (not filter_rows or i in (6,7,8)) else 3}" t="n"><v>{value}</v></c>')
+                    write(f'<c r="{ref}" s="{2 if (not filter_rows or i in money) else 3}" t="n"><v>{value}</v></c>')
                 else:
                     style = 1 if count == 1 else 0
                     write(f'<c r="{ref}" s="{style}" t="inlineStr"><is><t xml:space="preserve">{escape(clean(value))}</t></is></c>')
@@ -64,12 +82,12 @@ def filas_resumen(csv_path):
     """Filas CONTROL del CSV como filas de la hoja Resumen (sin encabezado; ver COLUMNAS_RESUMEN)."""
     controls = []
     with Path(csv_path).open(encoding='utf-8-sig', newline='') as f:
-        reader = csv.reader(f, delimiter=';'); next(reader)
+        reader = csv.reader(f, delimiter=';'); c = {n: i for i, n in enumerate(next(reader))}
         for row in reader:
             if row[0] == 'CONTROL':
-                concept = row[2]
+                concept = row[c['Comprobante']]
                 for old, new in LABELS.items(): concept = concept.replace(old, new)
-                controls.append([concept,row[5],row[6],row[7],label(row[8]),row[14]])
+                controls.append([concept,row[c['Saldo SGA']],row[c['Saldo ERP']],row[c['Diferencia SGA menos ERP']],label(row[c['Resultado']]),row[c['Observaciones']]])
     return controls
 
 def filas_detalle(csv_path):
@@ -77,10 +95,12 @@ def filas_detalle(csv_path):
     trae el Tipo visible (RC-X, OP-X, PENDIENTE...): no se reemplaza."""
     with Path(csv_path).open(encoding='utf-8-sig', newline='') as f:
         reader = csv.reader(f, delimiter=';')
-        yield next(reader)
+        cabecera = next(reader)
+        resultado = cabecera.index('Resultado')
+        yield cabecera
         for row in reader:
             if row[0] == 'CONTROL': continue
-            row[8] = label(row[8])
+            row[resultado] = label(row[resultado])
             yield row
 
 def export_excel(csv_path, output):
@@ -94,10 +114,13 @@ def export_excel(csv_path, output):
             z.writestr('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
             z.writestr('xl/workbook.xml', f'<workbook xmlns="{NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Resumen" sheetId="1" r:id="r1"/><sheet name="Conciliación general" sheetId="2" r:id="r2"/></sheets></workbook>')
             z.writestr('xl/_rels/workbook.xml.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+''.join(f'<Relationship Id="r{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in (1,2))+'<Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
-            z.writestr('xl/styles.xml', f'<styleSheet xmlns="{NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF24476A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
+            z.writestr('xl/styles.xml', f'<styleSheet xmlns="{NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF24476A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
             # Resumen: texto explícito para alcances/estados, importes numéricos.
             sheet(z,'xl/worksheets/sheet1.xml',summary,{2,3,4},[48,24,24,24,48,100])
-            n = sheet(z,'xl/worksheets/sheet2.xml',filas_detalle(csv_path),{6,7,8,10,11},[20,14,30,18,45,24,24,26,48,12,12,55,55,25,65,30,55],True)
+            cab = encabezado(csv_path)
+            posicion = lambda nombres: {i for i, n in enumerate(cab, 1) if n in nombres}
+            n = sheet(z,'xl/worksheets/sheet2.xml',filas_detalle(csv_path),posicion(NUMERICAS),[ANCHOS.get(x, 20) for x in cab],True,
+                      dates=posicion(FECHAS),money=posicion(IMPORTES))
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)

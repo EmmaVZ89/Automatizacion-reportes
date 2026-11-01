@@ -1,5 +1,6 @@
 """Server HTTP local: sirve la página (app/web), la API JSON y los eventos en vivo (SSE).
 Escucha sólo en 127.0.0.1 y exige el token de la sesión en todo lo que no sea estático."""
+import itertools
 import json
 import logging
 import sys
@@ -53,6 +54,8 @@ class Servidor:
         self.instancia = nuevo_token()[:16]  # cambia en cada arranque (la pantalla sabe así que ya reinició)
         self.probar_venv = probar_venv
         self.inactividad_segundos = inactividad_segundos
+        self.motivo_cierre = None  # queda en el registro al cerrar
+        self._cierre_registrado = False
         self.al_cerrar = al_cerrar
         self.ultima_peticion = time.time()
         self.cerrando = False
@@ -74,8 +77,12 @@ class Servidor:
         self._hilo = None
         self._abrir_puerto(puerto_inicial, intentos)
 
+    _numero = itertools.count(1)
+
     def _registro(self):
-        log = logging.getLogger(f'reportes.servidor.{id(self)}')
+        # Un nombre que no se repite: con id(self), un servidor nuevo podía heredar el registro de uno ya liberado y
+        # escribir en la carpeta de otro.
+        log = logging.getLogger(f'reportes.servidor.{next(Servidor._numero)}')
         log.setLevel(logging.INFO)
         log.propagate = False
         if not log.handlers:
@@ -152,9 +159,13 @@ class Servidor:
                 time.sleep(min(30, max(1, self.inactividad_segundos / 10)))
                 if self.cerrando:
                     return
+                # Una pestaña abierta (escucha los eventos) o una copia del Excel de origen en preparación son uso:
+                # sólo se apaga cuando nadie la tiene abierta.
+                if self.bus.suscriptores or self.origenes.en_curso():
+                    self.ultima_peticion = time.time()
                 if time.time() - self.ultima_peticion > self.inactividad_segundos and not self.trabajos.activos():
-                    self.registro.info('Se apaga por inactividad')
-                    self.apagar()
+                    s = self.inactividad_segundos
+                    self.apagar(motivo=f'por inactividad ({f"{s // 3600} h" if s >= 3600 else f"{s} s"} sin pestañas abiertas)')
                     return
         threading.Thread(target=vigilar, daemon=True).start()
 
@@ -166,6 +177,7 @@ class Servidor:
         subprocess.Popen(comando_reinicio(self.dir_datos, self.token, self.puerto), cwd=str(self.raiz), creationflags=flags,
                          close_fds=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.registro.info('Reinicio pedido desde la pantalla')
+        self.motivo_cierre = 'para reiniciarse'
         self.cerrando = True
 
         def cerrar():
@@ -173,9 +185,10 @@ class Servidor:
             self.cerrar()  # suelta el puerto enseguida para que lo tome la instancia nueva
         threading.Thread(target=cerrar, daemon=True).start()
 
-    def apagar(self, demora=0.3):
+    def apagar(self, demora=0.3, motivo='desde la pantalla ("Cerrar la herramienta")'):
         if self.cerrando:
             return
+        self.motivo_cierre = motivo
         self.cerrando = True
 
         def parar():
@@ -185,6 +198,9 @@ class Servidor:
 
     def cerrar(self):
         self.cerrando = True
+        if not self._cierre_registrado:
+            self._cierre_registrado = True
+            self.registro.info('Se cierra la herramienta %s', self.motivo_cierre or '(fin del proceso)')
         try:
             self.httpd.shutdown()
         except Exception:
@@ -194,6 +210,9 @@ class Servidor:
         except Exception:
             pass
         self.trabajos.cerrar()
+        for h in list(self.registro.handlers):  # suelta servidor.log (en Windows, si no, queda tomado)
+            self.registro.removeHandler(h)
+            h.close()
         if self.al_cerrar:
             try:
                 self.al_cerrar()

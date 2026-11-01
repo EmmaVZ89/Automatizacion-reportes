@@ -45,8 +45,12 @@ class Dominio:
     @staticmethod
     def _reconocer_default(ruta):
         from .reportes._comun import detectores
-        from .reportes._comun.entradas import resumen_archivo
-        return resumen_archivo(ruta, detectores.TODOS)
+        from .reportes._comun.entradas import resumen_archivo, valores_columna
+        r = resumen_archivo(ruta, detectores.TODOS)
+        if r.get('tipo') == 'erp_transacciones' and r.get('hoja'):
+            # de qué fondo es (para no mezclar el ERP del Fondo General con el de FERF Prov. Santa Fe)
+            r['fondo'] = detectores.fondo_por_asientos(valores_columna(ruta, r['hoja'], 'Asiento'))
+        return r
 
     def dir_cierre(self, cierre_id):
         return self.dir / 'cierres' / cierre_id
@@ -205,7 +209,7 @@ class Dominio:
             if reconocer:
                 try:
                     r = self._reconocer(final)
-                    archivo.update({'tipo': r.get('tipo'), 'hoja': r.get('hoja'), 'filas': r.get('filas'), 'aviso': r.get('aviso')})
+                    archivo.update({'tipo': r.get('tipo'), 'hoja': r.get('hoja'), 'filas': r.get('filas'), 'aviso': r.get('aviso'), 'fondo': r.get('fondo')})
                 except Exception as e:  # el archivo queda, con el motivo
                     archivo['error'] = str(e)
             with self._lock:
@@ -275,15 +279,48 @@ class Dominio:
             e = self._buscar_ejecucion(ejecucion_id)
             return dict(e) if e else None
 
-    def crear_ejecucion(self, cierre_id, reporte):
+    # ---------- variantes ----------
+    # Un reporte puede tener variantes (la Conciliación general, una por fondo de riesgo): cada una lleva sus propias
+    # versiones, su resultado final y su traslado de marcas. La variante es el valor de un parámetro del reporte.
+    @staticmethod
+    def variantes(reporte):
+        from . import catalogo
+        try:
+            return catalogo.obtener(reporte).get('variantes')
+        except KeyError:
+            return None
+
+    def variante_de(self, e):
+        """La variante de una ejecución (None si el reporte no tiene). Las de antes de las variantes la toman de sus
+        parámetros, o es la primera."""
+        v = self.variantes(e['reporte'])
+        if not v:
+            return None
+        return e.get('variante') or (e.get('parametros') or {}).get(v['parametro']) or v['opciones'][0]['valor']
+
+    def _misma_serie(self, a, b):
+        return a['cierreId'] == b['cierreId'] and a['reporte'] == b['reporte'] and self.variante_de(a) == self.variante_de(b)
+
+    def _siguiente_version(self, e):
+        return max((x['version'] for x in self._ejecuciones.entradas if x is not e and self._misma_serie(x, e)), default=0) + 1
+
+    def crear_ejecucion(self, cierre_id, reporte, variante=None):
         with self._lock:
             if not self._buscar_cierre(cierre_id):
                 raise KeyError('No existe ese cierre.')
-            version = max((e['version'] for e in self._ejecuciones.entradas if e['cierreId'] == cierre_id and e['reporte'] == reporte), default=0) + 1
-            e = {'id': self._id('e'), 'cierreId': cierre_id, 'reporte': reporte, 'version': version, 'estado': 'borrador',
-                 'creado': _iso(self.ahora()), 'inicio': None, 'fin': None, 'parametros': {}, 'entradas': {},
+            v = self.variantes(reporte)
+            parametros = {}
+            if v:
+                validas = [o['valor'] for o in v['opciones']]
+                variante = variante if variante in validas else validas[0]
+                parametros = {v['parametro']: variante}
+            else:
+                variante = None
+            e = {'id': self._id('e'), 'cierreId': cierre_id, 'reporte': reporte, 'variante': variante, 'version': 0, 'estado': 'borrador',
+                 'creado': _iso(self.ahora()), 'inicio': None, 'fin': None, 'parametros': parametros, 'entradas': {},
                  'resumen': None, 'salidas': [], 'revision': {'pendientes': 0, 'revisadas': 0, 'omitidas': 0},
                  'trabajoId': None, 'final': False, 'error': None, 'traslado': None}
+            e['version'] = self._siguiente_version(e)
             self._ejecuciones.entradas.append(e)
             self._ejecuciones.guardar()
             self.rutas(e['id'])['carpeta'].mkdir(parents=True, exist_ok=True)
@@ -313,6 +350,16 @@ class Dominio:
             if not e:
                 raise KeyError('No existe esa ejecución.')
             e['parametros'] = dict(parametros or {})
+            v = self.variantes(e['reporte'])
+            nueva = e['parametros'].get(v['parametro']) if v else None
+            if nueva and nueva != self.variante_de(e):
+                # cambiar el fondo en Opciones pasa la versión a la serie de ese fondo (sólo si todavía no corrió)
+                if e['estado'] not in ('borrador', 'listo'):
+                    raise ValueError('Esta versión ya corrió: para otro fondo, empezá una versión de ese fondo.')
+                e['variante'] = nueva
+                e['version'] = self._siguiente_version(e)
+            elif v and not e.get('variante'):
+                e['variante'] = self.variante_de(e)
             self._ejecuciones.guardar()
             escribir_json_atomico(self.rutas(ejecucion_id)['parametros'], e['parametros'])
             return dict(e)
@@ -343,7 +390,7 @@ class Dominio:
                 raise ValueError('Sólo una ejecución terminada puede ser el resultado final.')
             if valor:
                 for otra in self._ejecuciones.entradas:
-                    if otra['cierreId'] == e['cierreId'] and otra['reporte'] == e['reporte']:
+                    if self._misma_serie(otra, e):
                         otra['final'] = False
             e['final'] = bool(valor)
             self._ejecuciones.guardar()
@@ -367,8 +414,7 @@ class Dominio:
             e = self._buscar_ejecucion(ejecucion_id)
             if not e:
                 raise KeyError('No existe esa ejecución.')
-            previas = [x for x in self._ejecuciones.entradas if x['cierreId'] == e['cierreId'] and x['reporte'] == e['reporte']
-                       and x['version'] < e['version'] and x['estado'] == 'ok']
+            previas = [x for x in self._ejecuciones.entradas if self._misma_serie(x, e) and x['version'] < e['version'] and x['estado'] == 'ok']
             return dict(max(previas, key=lambda x: x['version'])) if previas else None
 
     # ---------- revisión ----------
@@ -456,7 +502,8 @@ class Dominio:
             if not anteriores:
                 return {'aplicadas': 0, 'sin_destino': 0, 'desde': None}
             previo = max(anteriores, key=lambda x: x['periodo'])
-            candidatas = [x for x in self._ejecuciones.entradas if x['cierreId'] == previo['id'] and x['reporte'] == e['reporte'] and x['estado'] == 'ok']
+            candidatas = [x for x in self._ejecuciones.entradas if x['cierreId'] == previo['id'] and x['reporte'] == e['reporte'] and x['estado'] == 'ok'
+                          and self.variante_de(x) == self.variante_de(e)]
             if not candidatas:
                 return {'aplicadas': 0, 'sin_destino': 0, 'desde': previo['periodo']}
             finales = [x for x in candidatas if x.get('final')]

@@ -27,6 +27,17 @@ def tramos(lista):
     return [Path(e['ruta']) for _, e in sorted(zip(nombres, lista), key=lambda par: orden.get(par[0], len(orden)))]
 
 
+def fechas_distintas(csv_path):
+    """(fila, columna) de las fechas a pintar de anaranjado: el comprobante está en los dos sistemas con fechas
+    distintas (en el cierre de octubre, 27 de 87.518)."""
+    detalle = excel.filas_detalle(csv_path)
+    cabecera = next(detalle)
+    if 'Fecha SGA' not in cabecera:
+        return []
+    s, e = cabecera.index('Fecha SGA'), cabecera.index('Fecha ERP')
+    return [(i, c) for i, fila in enumerate(detalle) if fila[s] and fila[e] and fila[s] != fila[e] for c in ('Fecha SGA', 'Fecha ERP')]
+
+
 def volcar(salidas, ruta_sqlite):
     """Las mismas filas que van a las dos hojas del XLSX, leídas del CSV de respaldo."""
     csv_path = Path(salidas) / 'Respaldo_tecnico' / 'Conciliacion_general.csv'
@@ -37,7 +48,7 @@ def volcar(salidas, ruta_sqlite):
         general = definiciones['general']
         detalle = excel.filas_detalle(csv_path)
         columnas = next(detalle)
-        volcador.tabla('general', columnas, detalle, general['clave'], titulo=general['titulo'])
+        volcador.tabla('general', columnas, detalle, general['clave'], marcas=fechas_distintas(csv_path), titulo=general['titulo'])
 
 
 def main(argv=None):

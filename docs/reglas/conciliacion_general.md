@@ -30,7 +30,8 @@ del legado; `herramientas/cambios_conciliacion.py` los verifica fila por fila co
 
 ## Qué hace
 
-Primera conciliación general de **todos** los movimientos recibidos del Fondo de Riesgo General: compara,
+Primera conciliación general de **todos** los movimientos recibidos de un fondo de riesgo (el Fondo de Riesgo
+General o, desde el 01/11/2026, FERF Prov. Santa Fe; ver "Fondos de riesgo" más abajo): compara,
 comprobante por comprobante, el saldo que surge del histórico de cuenta corriente de SGA con el saldo que
 surge de las transacciones del cliente de ERP. Agrupa por cliente, tipo interno y comprobante, suma con
 aritmética decimal exacta y recién después redondea a dos decimales. Las ausencias no se reemplazan por
@@ -52,7 +53,9 @@ cierre (eso es Controles SGA).
 - Cada libro debe tener **una sola** hoja de datos original. Una hoja que cumple a la vez el esquema SGA
   y el ERP es "esquema ambiguo" y se rechaza. Un archivo de ERP puesto como SGA (o al revés) se rechaza.
 - Archivos idénticos por contenido (mismo SHA-256) se rechazan ("Archivo duplicado por contenido").
-- `Tipo de transacción` vacío o distinto de `Cliente`, `Pago`, `Diario general` corta la ejecución.
+- `Tipo de transacción` vacío o distinto de `Cliente`, `Pago`, `Diario general` o `Liquidación` corta la ejecución.
+  `Liquidación` la traen los ERP de FERF Prov. Santa Fe (decisión del 01/11/2026): lleva número de `Factura` y se
+  clasifica y cruza con las mismas reglas que el resto (en la práctica, como las de tipo `Cliente`).
 - Varios archivos ERP con el mismo tipo de transacción se aceptan como tramos de una misma descarga y
   generan la alerta "Tramos del mismo tipo de transacción: … Verificar que sean partes de una misma
   descarga". Un ERP con exactamente 450.000 filas genera la alerta "Posible descarga recortada".
@@ -66,7 +69,7 @@ cierre (eso es Controles SGA).
 ### Filtro y lectura
 
 - De SGA se toman **sólo** las filas cuyo `FondoDeRiesgo` es igual al parámetro `fondo`. El ERP no se
-  filtra por fondo.
+  filtra por fondo: tiene que ser el ERP de ese fondo (ver "Fondos de riesgo").
 - Importe de SGA: columna `Importe`. Importe de ERP: columna `Saldo2`, conservando el signo.
 - Los importes se leen como decimales exactos (hasta 80 dígitos de precisión) y se suman antes de
   redondear. El redondeo a dos decimales es "mitad hacia arriba" (`ROUND_HALF_UP`).
@@ -168,19 +171,48 @@ esa fecha.
 |---|---|---|---|
 | `alcance` | Alcance del reporte ERP | (obligatorio, no se persiste) `abiertos` o `completo` | Qué estado reciben los comprobantes presentes en un solo lado (ver tabla de estados) y si se cuenta la alerta de filas con `Saldo2` cero |
 | `corte` | Fecha de corte | La del cierre (no se persiste) | Sólo se declara en Resumen / `Resumen.json`; con fecha inválida corta |
-| `fondo` | Fondo de riesgo | `Fondo de Riesgo General` | Filtro de filas de SGA; se escribe en la columna Fondo de cada fila |
+| `fondo` | Fondo de riesgo | La variante de la versión (`Fondo de Riesgo General` o `FERF Prov. Santa Fe`; desplegable, no se persiste) | Filtro de filas de SGA; se escribe en la columna Fondo de cada fila y define la variante (serie de versiones) |
+
+## Fondos de riesgo
+
+Pedido del 01/11/2026. La conciliación se hace por fondo: **Fondo de Riesgo General** y **FERF Prov. Santa Fe**.
+El histórico de SGA es el mismo para los dos (se filtra por `FondoDeRiesgo`); el ERP es una descarga por fondo.
+
+- **Variante.** El fondo es una variante del reporte (`REPORTE['variantes']`): cada fondo tiene su serie de versiones
+  (v1, v2… por fondo), su resultado final, su traslado de marcas entre versiones y su "traer la revisión del cierre
+  anterior". En el cierre son dos ítems obligatorios (Conciliación general · Fondo General y · FERF Prov. Santa Fe).
+  Las versiones de antes de este cambio son del Fondo General (su parámetro `fondo`).
+- **Opciones.** El fondo es un desplegable que arranca con el de la versión; cambiarlo en una versión que todavía no
+  corrió la pasa a la serie del otro fondo. Una versión que ya corrió no cambia de fondo.
+- **El ERP de cada fondo.** El ERP no trae una columna de fondo: se reconoce por el prefijo de sus asientos
+  (`SaFe…`: FERF Prov. Santa Fe; `Ventas-…`: Fondo General). Al agregar un ERP al cierre se guarda de qué fondo es
+  (por una muestra de las primeras filas) y Archivos lo muestra como dato ("ERP de …"). La validación va en Opciones,
+  donde se elige el fondo: si el ERP elegido es de otro fondo (o mezcla los dos), un aviso lo dice, ofrece "Usar
+  <ese fondo>" o "Elegir otro ERP", y no deja correr. Al correr, el servidor también rechaza un ERP de otro fondo. El motor revisa el archivo entero: corta si las transacciones mezclan los dos
+  fondos o si son de un fondo distinto del de la corrida, y si el histórico de SGA no tiene filas de ese fondo.
+- Con los archivos de octubre: el histórico tiene 339 filas de FERF Prov. Santa Fe (y 450.687 del Fondo General); el
+  ERP de Santa Fe tiene 1.065 filas (354 Cliente, 480 Liquidación, 118 Pago, 113 Diario general), de las que 924 tienen
+  `Saldo2` cero: es una descarga **completa**. Con alcance completo: 593 comprobantes, 227 COINCIDE, 1 DIFERENCIA.
 
 ## Salidas
 
 | Archivo | Tabla / solapa | Columnas principales | Clave de revisión |
 |---|---|---|---|
 | `Conciliacion_general.xlsx` | `Resumen` | `Control`, `Saldo SGA`, `Saldo ERP`, `Diferencia`, `Resultado / cantidad`, `Detalle` | `Control` |
-| `Conciliacion_general.xlsx` | `Conciliación general` | `Tipo`, `Cliente`, `Comprobante`, `CUIT`, `Razon social`, `Saldo SGA`, `Saldo ERP`, `Diferencia SGA menos ERP`, `Resultado`, `Filas SGA`, `Filas ERP`, `Origen SGA (primeras 5)`, `Origen ERP (primeras 5)`, `Estado revision`, `Observaciones` | `Tipo` + `Cliente` + `Comprobante`; la revisión se escribe en `Estado revision` y `Observaciones` |
+| `Conciliacion_general.xlsx` | `Conciliación general` | `Tipo`, `Cliente`, `Fecha SGA`, `Fecha ERP`, `Comprobante`, `CUIT`, `Razon social`, `Saldo SGA`, `Saldo ERP`, `Diferencia SGA menos ERP`, `Resultado`, `Filas SGA`, `Filas ERP`, `Origen SGA (primeras 5)`, `Origen ERP (primeras 5)`, `Estado revision`, `Observaciones` | `Tipo` + `Cliente` + `Comprobante`; la revisión se escribe en `Estado revision` y `Observaciones` |
 | `Respaldo_tecnico/Conciliacion_general.csv` | — | Las mismas columnas más `Fondo` y `Detalle identificacion` (alias: subrecibo y recibo global); al final filas con `Tipo = CONTROL` | — |
 | `Respaldo_tecnico/Resumen.json` | — | versión, alcance, corte, fondo, conteos por estado, cobertura por lado, fuentes (archivo, hoja, SHA-256, filas, total exacto, tipos), tipos ERP ausentes, alertas | — |
 | `Respaldo_tecnico/trazabilidad.sqlite`, `Respaldo_tecnico/COMPLETADO.txt` | — | Fila por fila de ambas fuentes con su clasificación; constancia de fin | — |
 
 - En la solapa Conciliación general los importes son números; CUIT, cliente y comprobante son texto.
+- `Fecha SGA` y `Fecha ERP` (pedido de quien usa el reporte, 01/11/2026) son la fecha del comprobante en cada
+  sistema, a la izquierda de `Comprobante`. En SGA se toma `FechaFactura`, salvo que el comprobante de la fila sea
+  de imputación (subrecibo, recibo, pendiente o NC imputada: `NumeroComprobanteImputacion` o `Subrecibo`), que
+  toma `FechaComprobanteImputacion`. En ERP, sólo `Fecha`. Con varias filas para el mismo comprobante va la más
+  antigua (la emisión). Vacía si ese sistema no tiene el comprobante o no trae la fecha. Sólo informan: no
+  intervienen en el cruce, los saldos ni el resultado. En el CSV van como `aaaa-mm-dd`; en el Excel, como
+  fechas. En la grilla, cuando el comprobante está en los dos sistemas con fechas distintas, las dos se pintan
+  de anaranjado (en el cierre de octubre: 27 de 87.518 comprobantes con las dos fechas).
   Los controles no se mezclan con el detalle: van sólo en Resumen.
 - Filas `CONTROL` del respaldo (y contenido del Resumen), en este orden: `TOTAL GENERAL POR COMPROBANTE`,
   `TOTAL FUENTES RECIBIDAS`, `DIFERENCIA DE REDONDEO`, `COBERTURA DE MOVIMIENTOS`, `ALCANCE Y CORTE`,
@@ -228,7 +260,8 @@ esa fecha.
   textos de las filas `CONTROL`.
 - El orden de las filas: claves ordenadas como texto por `(tipo, cliente, comprobante)`; los controles al
   final, en el orden indicado.
-- Las columnas y su orden (`HEAD` + `Fondo` + `Detalle identificacion`), el separador `;`, UTF-8 con BOM y
+- Las columnas y su orden (`HEAD` + `Fondo` + `Detalle identificacion`; desde el 01/11/2026 con `Fecha SGA` y
+  `Fecha ERP`, que la regresión compara aparte porque el legado no las tiene), el separador `;`, UTF-8 con BOM y
   la protección contra fórmulas (`'` delante de `=`, `+`, `-`, `@`) en el CSV.
 - Las aserciones de cobertura.
 

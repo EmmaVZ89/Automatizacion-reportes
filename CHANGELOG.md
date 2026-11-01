@@ -26,9 +26,44 @@
   la primera palabra.
 - Botón **Inicio** en la barra: la pantalla inicial, igual que el logo. **Cierres** muestra la lista de cierres y
   queda marcado mientras se trabaja dentro de un cierre.
+- **Conciliación general por fondo de riesgo:** Fondo de Riesgo General y FERF Prov. Santa Fe. El fondo se elige con un
+  desplegable en Opciones y se ve en todos los pasos, en el cierre, en Inicio y en Historial (que también filtra por
+  fondo). Cada fondo tiene su tarjeta en el cierre (los dos cuentan para completarlo), sus versiones, su resultado
+  final y su traslado de marcas. El histórico de SGA es el mismo; el ERP, el de cada fondo: la herramienta reconoce
+  de qué fondo es cada ERP (por sus asientos) y lo valida en Opciones, donde se elige el fondo (no deja correr con
+  el ERP de otro fondo ni mezclarlos). Se aceptan los movimientos de tipo Liquidación del
+  ERP de Santa Fe (se cruzan por su factura). Los Excel que se bajan llevan el fondo en el nombre.
+- Corregido: la herramienta se trababa (dejaba de responder y la tarea "Preparando el Excel de origen" no
+  terminaba) si se entraba a Resultados mientras se armaba el Excel de origen que arranca solo al terminar una
+  corrida. Había que volver a abrirla.
+- Pantalla más suave, sin saltos: al cambiar de tabla la grilla conserva su alto hasta que llegan los datos (antes se
+  vaciaba, la página se achicaba y volvía a crecer, y la barra de desplazamiento aparecía y desaparecía haciendo
+  "vibrar" todo); el lugar de esa barra queda siempre reservado; la grilla tiene alto fijo (filtrar o paginar no corre
+  lo de abajo); la tabla elegida se marca sin negrita; elegir una fila no corre la tabla; los bloques que se despliegan
+  (Resumen de la corrida, opciones avanzadas, ayuda, valores de Exportar) se abren animados; los avisos entran y salen
+  deslizándose; la ventana de Configuración y la de Nuevo cierre no cambian de tamaño; al entrar a un reporte, la
+  pantalla anterior ya no se estira un instante. Las animaciones se ven siempre, aunque Windows o el navegador tengan
+  "reducir movimiento".
+- Conciliación general: columnas **Fecha SGA** y **Fecha ERP** a la izquierda de Comprobante, con la fecha del
+  comprobante en cada sistema (en SGA, FechaFactura o, si el comprobante es de imputación, FechaComprobanteImputacion;
+  en ERP, Fecha). Si son distintas, en la grilla se pintan de anaranjado. En el Excel van como fechas. Los saldos y
+  resultados no cambian.
+- En la grilla, las columnas de fecha se ven como día/mes/año y su filtro ordena de la más antigua a la más reciente.
+- Una columna nueva de un reporte aparece en su lugar aunque hayas guardado tu propio orden de columnas.
+- El filtro de encabezado con muchos valores tildados ya no puede fallar por pedir demasiados a la vez.
+- Se sacó Historial del menú de los tres puntos (está en la barra de arriba). "Reportar un problema" (antes
+  "Descargar el registro") explica qué hace al pasar el mouse.
 - **Configuración** se abre en una ventana, como en PedidosIA: el índice de secciones a la izquierda (Apariencia,
   Archivos, Valores por defecto, Dónde están los datos, Acceso directo, La herramienta) y una sección a la vista.
 - Corregido: en algunas páginas, al bajar, el encabezado del reporte temblaba entre la versión completa y la achicada.
+- La herramienta ya no se apaga sola mientras está abierta en el navegador (antes se apagaba a las tres horas sin
+  pedidos aunque la pestaña siguiera abierta). Tampoco mientras prepara un Excel de origen.
+- Si se pierde la conexión con la herramienta, una franja roja lo dice y explica cómo volver a abrirla; los reportes y
+  Excel de origen en curso pasan a interrumpidos en Tareas. Si la conexión vuelve (la PC se despertó), la franja se va
+  sola y las tareas se ponen al día.
+- Registro más completo: cada apertura y cierre con su motivo, el aviso de que la vez anterior terminó sin cerrarse,
+  los errores sin atrapar, las caídas del programa (`fallas.log`) y la duración de cada Excel de origen. Se descarga
+  desde Configuración → La herramienta → **Reportar un problema**.
 - Corregido: la ventana de algunos avisos mostraba el texto "null".
 
 ## 2026.10.31

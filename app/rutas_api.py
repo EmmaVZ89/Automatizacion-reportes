@@ -43,6 +43,7 @@ class Api:
         ruta('POST', '/api/cerrar', self.cerrar)
         ruta('POST', '/api/reiniciar', self.reiniciar)
         ruta('POST', '/api/acceso-directo', self.acceso_directo)
+        ruta('GET', '/api/registro', self.registro_herramienta)
         ruta('POST', '/api/limpieza', self.limpieza)
         ruta('GET', '/api/parametros/([a-z_]+)', self.parametros)
         ruta('GET', '/api/cierres', self.cierres)
@@ -187,6 +188,20 @@ class Api:
         self._json(h, {'ok': True})
         self.s.apagar(0.5)
 
+    def registro_herramienta(self, h, mt, q):
+        """El registro de la herramienta en un solo .txt, para mandarlo a soporte: los anteriores (rotados), el actual y
+        fallas.log (caídas del intérprete)."""
+        d = self.s.dir_datos
+        partes = []
+        for nombre in ['servidor.log.3', 'servidor.log.2', 'servidor.log.1', 'servidor.log', 'fallas.log']:
+            ruta = d / nombre
+            if ruta.is_file():
+                partes.append(f'===== {nombre} =====\n' + ruta.read_text(encoding='utf-8', errors='replace'))
+        if not partes:
+            raise _error(404, 'Todavía no hay registro.')
+        datos = '\n'.join(partes).encode('utf-8')
+        self.s.responder_bytes(h, datos, 'text/plain; charset=utf-8', f'Registro de Reportes de cierre {time.strftime("%Y-%m-%d %H%M")}.txt')
+
     def acceso_directo(self, h, mt, q):
         self._body(h)
         try:
@@ -218,14 +233,27 @@ class Api:
     def _resumen_cierre(self, c):
         ejecuciones = self.s.dominio.listar_ejecuciones(c['id'])
         por_reporte = {}
-        for e in ejecuciones:
-            r = por_reporte.setdefault(e['reporte'], {'versiones': 0, 'ultima': None, 'final': None})
+
+        def sumar(r, e):
             r['versiones'] += 1
-            if r['ultima'] is None or e['version'] > r['ultima']['version']:
+            if r['ultima'] is None or e['creado'] > r['ultima']['creado']:
                 r['ultima'] = e
             if e.get('final'):
                 r['final'] = e
+        for e in ejecuciones:
+            r = por_reporte.setdefault(e['reporte'], {'versiones': 0, 'ultima': None, 'final': None})
+            sumar(r, e)
+            variante = self.s.dominio.variante_de(e)
+            if variante:
+                e['variante'] = variante
+                sumar(r.setdefault('variantes', {}).setdefault(variante, {'versiones': 0, 'ultima': None, 'final': None}), e)
         return {**c, 'reportes': por_reporte, 'ejecuciones': ejecuciones}
+
+    def _corto(self, e):
+        """El nombre corto de la variante de una ejecución ('FERF Santa Fe'), o ''."""
+        v = catalogo.obtener(e['reporte']).get('variantes') if e['reporte'] in catalogo.REPORTES else None
+        variante = self.s.dominio.variante_de(e) if v else None
+        return next((o.get('corto') or o['titulo'] for o in v['opciones'] if o['valor'] == variante), '') if v else ''
 
     def herramienta(self, h, mt, q):
         d = self._definicion(mt.group(1))
@@ -381,7 +409,7 @@ class Api:
         b = self._body(h)
         c = self._cierre(str(b.get('cierre', '')))
         d = self._definicion(str(b.get('reporte', '')))
-        e = self.s.dominio.crear_ejecucion(c['id'], d['codigo'])
+        e = self.s.dominio.crear_ejecucion(c['id'], d['codigo'], b.get('variante'))
         self.s.bus.emitir('ejecucion', e)
         self._json(h, e, 201)
 
@@ -464,6 +492,20 @@ class Api:
         if b.get('guardarDefaults'):
             persistibles = {p['clave']: parametros[p['clave']] for p in d['parametros'] if not p.get('no_persistir')}
             self.s.dominio.guardar_configuracion({'reportes': {d['codigo']: {'parametros': persistibles}}})
+        variantes = d.get('variantes')
+        if variantes:
+            fondo = parametros.get(variantes['parametro'])
+            for ids in entradas.values():
+                for i in ids:
+                    a = next((x for x in c['archivos'] if x['id'] == i), {})
+                    if a.get('fondo') == 'mezcla':
+                        raise _error(400, f'{a["nombre"]} mezcla movimientos de los dos fondos. Usá el ERP de un solo fondo.')
+                    if a.get('fondo') and a['fondo'] != fondo:
+                        raise _error(400, f'{a["nombre"]} es el ERP de {a["fondo"]} y esta versión es de {fondo}. Elegí el ERP de {fondo}.')
+        try:
+            e = self.s.dominio.asignar_parametros(e['id'], parametros)
+        except ValueError as err:
+            raise _error(400, str(err))
         self.s.dominio.asignar_entradas(e['id'], entradas)
         rutas = self.s.dominio.rutas(e['id'])
         archivos = {a['id']: a for a in c['archivos']}
@@ -480,7 +522,7 @@ class Api:
         try:
             t = self.s.trabajos.lanzar(e['id'], catalogo.interprete(d['codigo'], self.s.raiz) + ['--trabajo', str(rutas['carpeta'])],
                                        cwd=self.s.raiz, env={'PYTHONPATH': f'{self.s.raiz};{self.s.raiz / "vendor"}'},
-                                       registro=rutas['registro'], titulo=f'{d["nombre"]} · ' + (f'{_mes_corto(c["periodo"])} · ' if c.get('periodo') else '') + f'v{e["version"]}')
+                                       registro=rutas['registro'], titulo=f'{d["nombre"]} · ' + (f'{self._corto(e)} · ' if self._corto(e) else '') + (f'{_mes_corto(c["periodo"])} · ' if c.get('periodo') else '') + f'v{e["version"]}')
         except ValueError as err:
             raise _error(409, str(err))
         e = self.s.dominio.actualizar_estado(e['id'], 'corriendo', trabajoId=t['id'], error=None)
@@ -569,7 +611,7 @@ class Api:
         except (ValueError, FileNotFoundError) as err:
             raise _error(400, str(err))
         c = self.s.dominio.obtener_cierre(e['cierreId']) or {}
-        sufijo = f' - {c.get("periodo") or ""} v{e["version"]}'.replace('  ', ' ')
+        sufijo = f' - {c.get("periodo") or ""} {self._corto(e)} v{e["version"]}'.replace('  ', ' ')
         self.s.responder_bytes(h, datos, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f'{Path(nombre).stem}{sufijo} (vista).xlsx')
 
     def origen_estado(self, h, mt, q):
@@ -640,7 +682,7 @@ class Api:
                 raise _error(400, 'Indicá qué exportar.')
         except (ValueError, FileNotFoundError) as err:
             raise _error(400, str(err))
-        sufijo = f' - {c.get("periodo", "")} v{e["version"]}'.rstrip()
+        sufijo = f' - {c.get("periodo", "")} {self._corto(e)} v{e["version"]}'.replace('  ', ' ').rstrip()
         base = Path(nombre)
         self.s.responder_bytes(h, datos, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f'{base.stem}{sufijo} (trabajado).xlsx')
 
@@ -663,7 +705,8 @@ class Api:
             raise _error(404, 'No existe ese archivo.')
         if not ruta.is_file() or ruta.suffix.lower() in ('.sqlite',):
             raise _error(404, 'No existe ese archivo.')
-        self.s.responder_archivo(h, ruta, ruta.name)
+        corto = self._corto(e)
+        self.s.responder_archivo(h, ruta, f'{ruta.stem} - {corto}{ruta.suffix}' if corto else ruta.name)
 
     def registro(self, h, mt, q):
         e = self._ejecucion(mt.group(1))

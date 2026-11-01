@@ -2,6 +2,7 @@ import json
 import sys
 import time
 import unittest
+import unittest.mock
 
 from app import arranque
 from app.servidor import crear_servidor
@@ -119,6 +120,81 @@ class ArranqueTests(unittest.TestCase):
             s.servir_en_hilo()
             try:
                 self.assertTrue(esperar_hasta(lambda: s.cerrando, 10))
+            finally:
+                s.cerrar()
+
+    def test_con_una_pestana_abierta_no_se_apaga_y_el_motivo_queda_en_el_registro(self):
+        with carpeta_temporal() as d:
+            s = crear_servidor(d, puerto_inicial=7435, intentos=5, probar_venv=False, inactividad_segundos=1)
+            pestana = s.bus.suscribir()  # lo que hace /api/eventos mientras la pantalla está abierta
+            s.ultima_peticion = time.time() - 5
+            s._vigilar_inactividad()
+            s.servir_en_hilo()
+            try:
+                time.sleep(3.5)
+                self.assertFalse(s.cerrando)
+                s.bus.desuscribir(pestana)
+                self.assertTrue(esperar_hasta(lambda: s.cerrando, 10))
+            finally:
+                s.cerrar()
+            registro = (d / 'servidor.log').read_text(encoding='utf-8')
+            self.assertIn('Se cierra la herramienta por inactividad (1 s sin pestañas abiertas)', registro)
+            self.assertEqual(registro.count('Se cierra la herramienta'), 1)
+
+    def test_registro_de_apertura_y_de_sesion_anterior_sin_cerrar(self):
+        with carpeta_temporal() as d:
+            (d / '.servidor.json').write_text(json.dumps({'pid': 1, 'puerto': 7436, 'token': 'viejo', 'inicio': '2026-11-01T09:00:00'}), encoding='utf-8')
+            s = arranque.main(['--datos', str(d), '--puerto', '7436', '--sin-navegador'], abrir=lambda u: None, bloquear=False, inactividad_segundos=0)
+            try:
+                c = Cliente(s)
+                status, _, r = c.post('/api/cerrar', {})
+                self.assertEqual(status, 200)
+                self.assertTrue(esperar_hasta(lambda: s.cerrando, 10))
+            finally:
+                s.cerrar()
+            registro = (d / 'servidor.log').read_text(encoding='utf-8')
+            self.assertIn('Se abre la herramienta: versión', registro)
+            self.assertIn('La sesión anterior (pid 1, abierta el 2026-11-01T09:00:00) terminó sin cerrarse', registro)
+            self.assertIn('Se cierra la herramienta desde la pantalla', registro)
+            self.assertFalse((d / '.servidor.json').exists())  # cerrada bien: la próxima no avisa nada
+
+    def test_errores_sin_atrapar_van_al_registro(self):
+        import threading
+        from unittest import mock
+        registro = mock.Mock()
+        anteriores = (sys.excepthook, threading.excepthook, sys.stderr)
+        with carpeta_temporal() as d:
+            try:
+                arranque.registrar_fallas(d, registro)
+                try:
+                    raise ValueError('falla de prueba')
+                except ValueError:
+                    sys.excepthook(*sys.exc_info())
+                hilo = threading.Thread(target=lambda: 1 / 0, name='hilo-de-prueba')
+                hilo.start()
+                hilo.join()
+                self.assertTrue((d / arranque.ARCHIVO_FALLAS).exists())
+            finally:
+                import faulthandler
+                faulthandler.disable()
+                sys.excepthook, threading.excepthook, sys.stderr = anteriores
+        textos = [str(c.args) for c in registro.critical.call_args_list]
+        self.assertTrue(any('falla de prueba' in x for x in textos))
+        self.assertTrue(any('hilo-de-prueba' in x and 'ZeroDivisionError' in x for x in textos))
+
+    def test_descargar_el_registro(self):
+        with carpeta_temporal() as d:
+            s = servidor_de_prueba(d, puerto=7437)
+            try:
+                s.registro.info('línea de prueba del registro')
+                (d / 'fallas.log').write_text('Fatal Python error: prueba' + chr(10), encoding='utf-8')
+                status, cabeceras, cuerpo = Cliente(s).get('/api/registro')
+                self.assertEqual(status, 200)
+                texto = cuerpo.decode('utf-8')
+                self.assertIn('===== servidor.log =====', texto)
+                self.assertIn('línea de prueba del registro', texto)
+                self.assertIn('Fatal Python error: prueba', texto)
+                self.assertIn('attachment', cabeceras.get('Content-Disposition', ''))
             finally:
                 s.cerrar()
 

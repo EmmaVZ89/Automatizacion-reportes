@@ -31,7 +31,9 @@
 :root { --curva:cubic-bezier(.2,.7,.3,1); --radio:12px; }
 
 * { box-sizing:border-box; scrollbar-width:thin; scrollbar-color:var(--line2) transparent; }
-html { height:100%; }
+/* El lugar de la barra de desplazamiento queda siempre reservado: si aparece o desaparece (una tabla más corta), nada
+   se corre a los costados. */
+html { height:100%; scrollbar-gutter:stable; }
 body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font:14.5px/1.5 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; font-variant-numeric:tabular-nums; }
 h1, h2, h3 { margin:0; color:var(--text2); line-height:1.2; font-family:"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
 h1 { font-size:26px; font-weight:700; letter-spacing:-.015em; }
@@ -133,6 +135,13 @@ main.vista.ancha { max-width:1500px; }
 .chip.warn { background:var(--warn-suave); color:var(--warn); }
 .chip.error { background:var(--error-suave); color:var(--error); }
 .chip.acento { background:var(--accent-suave); color:var(--accent); }
+/* El fondo de riesgo de la conciliación: siempre a la vista, con el color de la marca. */
+.chip.fondo { background:var(--accent-btn); color:var(--accent-btn-text); font-weight:700; }
+.chip.fondo.en-tarjeta { margin-top:4px; }
+.chip.fondo.chico { margin-left:8px; padding:1px 8px; font-size:11.5px; }
+.mini-reporte .mini-variante { color:var(--accent); font-weight:700; }
+.caja-error.conflicto-fondo { margin:4px 0 0; }
+.caja-error.conflicto-fondo .acciones-fila { margin-top:8px; }
 .chip.borde { background:transparent; border-color:var(--line2); color:var(--muted); }
 .chip.late { animation:latir .6s var(--curva) backwards; }
 
@@ -304,6 +313,11 @@ main.vista.ancha { max-width:1500px; }
 .tabla-editable th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line2); color:var(--muted); font-size:13px; font-weight:650; }
 .tabla-editable td { padding:4px 6px; border-bottom:1px solid var(--line); }
 .tabla-editable td input[type="text"], .tabla-editable td select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--text); }
+/* Los bloques que se despliegan (<details>) se abren y se cierran animados: lo de abajo se desliza en lugar de saltar.
+   interpolate-size deja animar hasta "auto". */
+:root { interpolate-size:allow-keywords; }
+details::details-content { block-size:0; overflow:clip; overflow-clip-margin:6px; transition:block-size .3s var(--curva), content-visibility .3s allow-discrete; }
+details[open]::details-content { block-size:auto; }
 details.avanzadas { margin-top:6px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
 details.avanzadas > summary { display:flex; align-items:center; gap:10px; padding:13px 16px; cursor:pointer; list-style:none; font-weight:650; color:var(--text2); }
 details.avanzadas > summary::-webkit-details-marker { display:none; }
@@ -366,7 +380,9 @@ details.detalle-tecnico summary { cursor:pointer; color:var(--muted); font-size:
 .lista-tablas .libro { padding:10px 8px 4px; font-size:12.5px; color:var(--muted); font-weight:650; }
 .lista-tablas button { display:flex; align-items:center; gap:8px; padding:8px 10px; border:0; border-radius:8px; background:none; color:var(--text); text-align:left; cursor:pointer; width:100%; transition:background-color .15s ease; }
 .lista-tablas button:hover { background:var(--panel2); }
-.lista-tablas button.activa { background:var(--accent-suave); color:var(--accent); font-weight:650; }
+/* La tabla elegida se marca con color, fondo y una barrita, no con negrita: la negrita ensancha el texto (y un nombre
+   largo puede pasar a dos renglones), y al cambiar de tabla la lista se movía. */
+.lista-tablas button.activa { background:var(--accent-suave); color:var(--accent); box-shadow:inset 3px 0 0 var(--accent); }
 .lista-tablas button .nombre { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .lista-tablas .pend { min-width:24px; padding:0 7px; border-radius:999px; text-align:center; font-size:12px; font-weight:700; background:var(--warn-suave); color:var(--warn); }
 .lista-tablas .pend.cero { background:var(--ok-suave); color:var(--ok); }
@@ -380,7 +396,8 @@ details.detalle-tecnico summary { cursor:pointer; color:var(--muted); font-size:
 .segmentado button { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border:0; border-radius:7px; background:none; color:var(--muted); font-weight:600; cursor:pointer; font-size:13.5px; }
 .segmentado button:hover { color:var(--text); }
 .segmentado button.activa { background:var(--panel); color:var(--text2); box-shadow:var(--sombra); }
-.barra-seleccion { display:flex; gap:8px; align-items:center; flex-wrap:wrap; min-height:52px; padding:8px 12px; margin-bottom:10px; border-radius:11px; background:var(--accent-suave); color:var(--text); transition:background-color .2s ease; }
+/* El mismo alto con la ayuda (dos renglones) o con los botones de marcar: elegir una fila no corre la tabla. */
+.barra-seleccion { display:flex; gap:8px; align-items:center; flex-wrap:wrap; min-height:56px; padding:8px 12px; margin-bottom:10px; border-radius:11px; background:var(--accent-suave); color:var(--text); transition:background-color .2s ease; }
 .barra-seleccion.vacia { background:var(--panel2); color:var(--muted); font-size:13.5px; }
 .barra-seleccion .cuenta-sel { font-weight:700; color:var(--accent); margin-right:4px; }
 .barra-seleccion .entrada-texto { flex:1; min-width:180px; padding:6px 10px; }
@@ -453,12 +470,12 @@ dialog:not([open]) { display:none !important; }
 dialog.modal { width:min(640px, calc(100vw - 32px)); }
 dialog.modal.ancho { width:min(900px, calc(100vw - 32px)); }
 /* Configuración (ventana como la de PedidosIA): índice de secciones a la izquierda, una sección a la vista. */
-.config-cuerpo { display:grid; grid-template-columns:210px minmax(0,1fr); gap:0 22px; min-height:min(440px, 60vh); }
+.config-cuerpo { display:grid; grid-template-columns:210px minmax(0,1fr); gap:0 22px; height:min(500px, 62vh); }
 .config-indice { display:flex; flex-direction:column; gap:2px; border-right:1px solid var(--line); padding-right:12px; }
 .config-indice button { display:flex; align-items:center; gap:9px; text-align:left; background:none; border:0; border-radius:8px; padding:8px 10px; color:var(--muted); font:inherit; font-weight:600; cursor:pointer; transition:background-color .15s ease, color .15s ease; }
 .config-indice button:hover { background:var(--panel2); color:var(--text); }
 .config-indice button.activa { background:var(--accent-suave); color:var(--accent); box-shadow:inset 3px 0 0 var(--accent); }
-.config-texto { max-height:min(520px, 62vh); overflow:auto; padding:2px 4px 2px 0; }
+.config-texto { min-height:0; overflow:auto; padding:2px 4px 2px 0; }
 .config-texto section { display:none; }
 .config-texto section.activa { display:block; animation:fundir .25s ease; }
 .config-texto h3 { display:flex; align-items:center; gap:9px; margin:2px 0 4px; font-size:16.5px; }
@@ -496,7 +513,8 @@ dialog[open] { animation:aparecer .2s var(--curva); }
 .meses button.elegido { background:var(--accent-btn); border-color:var(--accent-btn); color:var(--accent-btn-text); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent); }
 .meses button.actual:not(.elegido)::after { content:''; position:absolute; left:50%; bottom:5px; width:5px; height:5px; margin-left:-2.5px; border-radius:50%; background:var(--accent); }
 .meses button:disabled { opacity:.55; cursor:not-allowed; text-decoration:line-through; }
-.vista-previa { display:flex; gap:12px; align-items:center; margin-top:16px; padding:12px 14px; border-radius:11px; background:var(--accent-suave); color:var(--text); }
+/* Alto de dos renglones desde el principio: al elegir el mes el texto crece y la ventana no se achica ni se recentra. */
+.vista-previa { display:flex; gap:12px; align-items:center; min-height:70px; box-sizing:border-box; margin-top:16px; padding:12px 14px; border-radius:11px; background:var(--accent-suave); color:var(--text); }
 .vista-previa > .i { color:var(--accent); }
 
 /* bienvenida */
@@ -541,7 +559,11 @@ dialog[open] { animation:aparecer .2s var(--curva); }
 /* ---------- avisos ---------- */
 .avisos { position:fixed; right:20px; bottom:20px; z-index:70; display:flex; flex-direction:column; gap:10px; width:min(400px, calc(100vw - 40px)); }
 .aviso { position:relative; overflow:hidden; display:flex; gap:12px; align-items:flex-start; padding:13px 14px 15px; border-radius:12px; background:var(--panel); border:1px solid var(--line); box-shadow:0 12px 32px var(--sombra-alta); animation:entrarDerecha .3s var(--curva); }
-.aviso.saliendo { animation:salir .25s ease-in forwards; }
+.aviso.saliendo { animation:salirAviso .32s ease-in forwards; }
+/* El alto acompaña la entrada y la salida: los otros avisos se corren de a poco, no de golpe. */
+.avisos > .aviso:not(.saliendo) { animation:entrarAviso .34s var(--curva); }
+@keyframes entrarAviso { from { opacity:0; transform:translateX(26px); max-height:0; padding-top:0; padding-bottom:0; margin-top:-10px; } 45% { max-height:var(--alto-aviso, 220px); padding-top:13px; padding-bottom:15px; margin-top:0; } to { opacity:1; transform:none; } }
+@keyframes salirAviso { 0% { opacity:1; transform:none; max-height:var(--alto-aviso, 220px); } 55% { opacity:0; transform:translateX(30px); max-height:var(--alto-aviso, 220px); } 100% { opacity:0; transform:translateX(30px); max-height:0; padding-top:0; padding-bottom:0; margin-top:-10px; border-width:0; } }
 .aviso .icono { width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; background:var(--accent-suave); color:var(--accent); }
 .aviso.ok .icono { background:var(--ok-suave); color:var(--ok); } .aviso.error .icono { background:var(--error-suave); color:var(--error); } .aviso.atencion .icono { background:var(--warn-suave); color:var(--warn); }
 .aviso .icono .i { width:15px; height:15px; stroke-width:2.6; }
@@ -608,7 +630,9 @@ dialog[open] { animation:aparecer .2s var(--curva); }
 .cabecera-fija.compacta .pasos .linea { top:13px; }
 .cabecera-fija.compacta .paso.actual .bola { box-shadow:0 0 0 3px var(--accent-suave); }
 .lista-tablas { top:calc(58px + var(--alto-cabecera, 0px) + 12px); }
-.marco-grilla { max-height:max(320px, calc(100vh - 58px - var(--alto-cabecera, 0px) - 170px)); }
+/* Alto fijo (el lugar disponible en pantalla), como la hoja de un Excel: filtrar, paginar o cambiar de tabla no cambia
+   el alto de la página ni corre lo de abajo. */
+.marco-grilla { height:max(320px, calc(100vh - 58px - var(--alto-cabecera, 0px) - 170px)); }
 
 /* ---------- archivos lado a lado y opciones principales en un renglón ---------- */
 .bloques-entradas { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap:14px; margin-bottom:14px; }
@@ -713,6 +737,8 @@ button.descarga { width:100%; font:inherit; color:inherit; text-align:left; curs
 .banda-version { display:flex; align-items:center; justify-content:center; gap:10px 14px; flex-wrap:wrap; padding:9px 16px; background:var(--warn-suave); color:var(--text2); border-bottom:1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); font-size:13.5px; }
 .banda-version.oculto { display:none; }
 .banda-version .i { color:var(--warn); width:18px; height:18px; }
+.banda-conexion { background:var(--error-suave); }
+.banda-conexion .i { color:var(--error); }
 
 /* ---------- visor de tareas (botón de la barra, panel y tarjeta) ---------- */
 .tareas-btn { position:relative; }
@@ -790,7 +816,8 @@ button.descarga { width:100%; font:inherit; color:inherit; text-align:left; curs
 .opcion-fila small { display:block; color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .casillas-exportar { display:flex; flex-direction:column; gap:2px; }
 .valores-exportar { grid-template-columns:1fr; max-height:200px; margin:0 0 8px; padding:4px 10px; border:1px solid var(--line); border-radius:10px; }
-.valores-exportar.oculto { display:none; }
+.valores-exportar { transition:max-height .28s var(--curva), opacity .2s ease, margin .28s var(--curva), padding .28s var(--curva), border-color .2s; }
+.valores-exportar.oculto { max-height:0; opacity:0; margin:0; padding-top:0; padding-bottom:0; border-color:transparent; overflow:hidden; pointer-events:none; }
 .valores-exportar .casilla { align-items:center; }
 .cuenta-exportar { transition:opacity .2s ease; }
 .cuenta-exportar.contando { opacity:.5; }

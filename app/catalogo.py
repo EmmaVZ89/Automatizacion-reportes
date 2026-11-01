@@ -183,4 +183,4 @@ def descripcion_publica(codigo, raiz=RAIZ, probar=True):
     return {'codigo': d['codigo'], 'nombre': d['nombre'], 'descripcion': d['descripcion'], 'disponible': disp['disponible'], 'motivo': disp['motivo'],
             'entradas': [{k: v for k, v in e.items() if k != 'detectar'} for e in d['entradas']],
             'parametros': d['parametros'], 'salidas': d['salidas'], 'pausas': d.get('pausas', []), 'ayuda': d.get('ayuda', ''),
-            'ambito': d.get('ambito', 'cierre'), 'icono': d.get('icono', 'reporte')}
+            'ambito': d.get('ambito', 'cierre'), 'icono': d.get('icono', 'reporte'), 'variantes': d.get('variantes')}

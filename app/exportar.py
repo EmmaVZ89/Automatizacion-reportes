@@ -188,16 +188,21 @@ def exportar_cierre(dominio, cierre_id):
         publico = {k: v for k, v in c.items() if k != 'archivos'}
         publico['archivos'] = [{k: a.get(k) for k in ('nombre', 'bytes', 'sha256', 'tipo', 'hoja', 'filas')} for a in c['archivos']]
         z.writestr('cierre.json', json.dumps(publico, ensure_ascii=False, indent=2))
+        # Una por reporte y, en los reportes con variantes (los fondos de la conciliación), una por variante.
         elegidas = {}
         for e in dominio.listar_ejecuciones(cierre_id):
             if e['estado'] != 'ok':
                 continue
-            actual = elegidas.get(e['reporte'])
+            serie = (e['reporte'], dominio.variante_de(e))
+            actual = elegidas.get(serie)
             if actual is None or (e.get('final') and not actual.get('final')) or (e.get('final') == actual.get('final') and e['version'] > actual['version']):
-                elegidas[e['reporte']] = e
-        for e in elegidas.values():
-            base = f'ejecuciones/{e["reporte"]}/'
-            z.writestr(base + 'ejecucion.json', json.dumps(e, ensure_ascii=False, indent=2))
+                elegidas[serie] = e
+        for (reporte, variante), e in elegidas.items():
+            v = dominio.variantes(reporte)
+            valores = [o['valor'] for o in v['opciones']] if v else []
+            indice = valores.index(variante) if variante in valores else 0
+            base = f'ejecuciones/{reporte}/' if not indice else f'ejecuciones/{reporte}--{indice}/'
+            z.writestr(base + 'ejecucion.json', json.dumps({**e, 'variante': variante}, ensure_ascii=False, indent=2))
             rutas = dominio.rutas(e['id'])
             for clave in ('resumen', 'triage', 'parametros'):
                 if rutas[clave].exists():
@@ -240,13 +245,16 @@ def importar_cierre(dominio, datos_zip):
         dominio._cierres.guardar()
     nombres = z.namelist()
     reportes = sorted({n.split('/')[1] for n in nombres if n.startswith('ejecuciones/') and n.count('/') >= 2})
-    for reporte in reportes:
-        base = f'ejecuciones/{reporte}/'
+    for carpeta in reportes:
+        base = f'ejecuciones/{carpeta}/'
+        reporte = carpeta.split('--')[0]  # "<reporte>--<n>" es la variante n; los cierres de antes no la tienen
         try:
             original = json.loads(z.read(base + 'ejecucion.json').decode('utf-8'))
         except (KeyError, ValueError):
             continue
-        e = dominio.crear_ejecucion(c['id'], reporte)
+        v = dominio.variantes(reporte)
+        variante = original.get('variante') or ((original.get('parametros') or {}).get(v['parametro']) if v else None)
+        e = dominio.crear_ejecucion(c['id'], reporte, variante)
         rutas = dominio.rutas(e['id'])
         parametros = json.loads(z.read(base + 'parametros.json').decode('utf-8')) if base + 'parametros.json' in nombres else original.get('parametros', {})
         dominio.asignar_parametros(e['id'], parametros)

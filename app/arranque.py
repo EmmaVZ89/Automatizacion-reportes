@@ -23,8 +23,10 @@ if str(RAIZ) not in sys.path:
 
 from app.servidor import crear_servidor, PUERTO_INICIAL, INTENTOS_PUERTO  # noqa: E402
 from app.almacen import escribir_json_atomico, leer_json  # noqa: E402
+from app.version import VERSION  # noqa: E402
 
 ARCHIVO_INSTANCIA = '.servidor.json'
+ARCHIVO_FALLAS = 'fallas.log'
 
 
 def dir_datos(explicita=None):
@@ -58,7 +60,26 @@ def abrir_navegador(url):
         pass
 
 
-def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3 * 3600, acceso=None):
+def registrar_fallas(carpeta, registro):
+    """Que nada se pierda en silencio (con pythonw no hay consola): las excepciones sin atrapar, del hilo principal o de
+    cualquier otro, van al registro; una caída del intérprete (faulthandler) y lo que se escriba en stderr, a
+    fallas.log."""
+    import faulthandler
+    import threading
+    import traceback
+    fallas = open(Path(carpeta) / ARCHIVO_FALLAS, 'a', encoding='utf-8', buffering=1)
+    faulthandler.enable(file=fallas)
+    if sys.stderr is None:
+        sys.stderr = fallas
+
+    def sin_atrapar(tipo, valor, tb):
+        registro.critical('Error sin atrapar:\n%s', ''.join(traceback.format_exception(tipo, valor, tb)))
+    sys.excepthook = sin_atrapar
+    threading.excepthook = lambda a: registro.critical('Error sin atrapar en el hilo %s:\n%s', a.thread.name if a.thread else '?',
+                                                       ''.join(traceback.format_exception(a.exc_type, a.exc_value, a.exc_traceback)))
+
+
+def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3 * 3600, acceso=None, fallas=False):
     p = argparse.ArgumentParser(description='Reportes de cierre')
     p.add_argument('--sin-navegador', action='store_true')
     p.add_argument('--puerto', type=int, default=PUERTO_INICIAL)
@@ -99,6 +120,14 @@ def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3
                 time.sleep(0.4)
     if servidor is None:
         servidor = crear_servidor(carpeta, puerto_inicial=args.puerto, intentos=INTENTOS_PUERTO, token=args.reinicio, inactividad_segundos=inactividad_segundos, al_cerrar=al_cerrar)
+    anterior = leer_json(archivo, None) if archivo.exists() else None
+    servidor.registro.info('Se abre la herramienta: versión %s, pid %s, puerto %s, Python %s', VERSION, os.getpid(), servidor.puerto, sys.version.split()[0])
+    if anterior and anterior.get('pid') != os.getpid():
+        # Al cerrarse bien se borra el archivo de la instancia; si sigue ahí, la anterior no llegó a cerrarse.
+        servidor.registro.warning('La sesión anterior (pid %s, abierta el %s) terminó sin cerrarse: se apagó o suspendió la PC, '
+                                  'se cerró el proceso o falló (ver más arriba y fallas.log)', anterior.get('pid'), anterior.get('inicio'))
+    if fallas:
+        registrar_fallas(carpeta, servidor.registro)
     escribir_json_atomico(archivo, {'pid': os.getpid(), 'puerto': servidor.puerto, 'token': servidor.token, 'inicio': time.strftime('%Y-%m-%dT%H:%M:%S')})
     if acceso:
         acceso(RAIZ, carpeta, servidor.registro)
@@ -116,4 +145,4 @@ def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3
 
 if __name__ == '__main__':
     from app.acceso_directo import asegurar_en_hilo
-    sys.exit(main(acceso=asegurar_en_hilo))
+    sys.exit(main(acceso=asegurar_en_hilo, fallas=True))

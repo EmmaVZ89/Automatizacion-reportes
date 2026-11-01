@@ -51,8 +51,9 @@ Al abrir la herramienta ves la pantalla de **Inicio**: el cierre en curso y, deb
 esa pantalla volvés desde **Inicio**, en la barra de arriba, o tocando el logo con el nombre de la
 herramienta; **Cierres** muestra sólo la lista de cierres. Con **Nuevo cierre** elegís el mes en un
 calendario; la fecha de corte se propone como el último día del mes y se puede cambiar. Esa fecha queda
-propuesta en todos los reportes de ese cierre. Cada cierre muestra el estado de sus cuatro reportes: sin
-correr, en curso, terminado con tantas filas pendientes, o resultado final.
+propuesta en todos los reportes de ese cierre. Cada cierre muestra el estado de sus reportes (la
+Conciliación general cuenta dos veces: una por cada fondo de riesgo): sin correr, en curso, terminado con
+tantas filas pendientes, o resultado final.
 
 ### Cada reporte en cinco pasos
 
@@ -132,8 +133,13 @@ opciones y volvés a ejecutar, se crea otra versión.
 
 ## Cada reporte en un párrafo
 
-**Conciliación general.** Pide el histórico de cuenta corriente de SGA y el reporte de transacciones
-del cliente de ERP (uno unificado, o hasta tres separados: Cliente, Pago y Diario general). En Opciones
+**Conciliación general.** Se hace por fondo de riesgo: **Fondo de Riesgo General** y **FERF Prov. Santa Fe**,
+cada uno con su tarjeta en el cierre, sus versiones y su resultado final. Pide el histórico de cuenta corriente
+de SGA (el mismo para los dos fondos: se toman sólo las filas del fondo) y el reporte de transacciones del
+cliente de ERP **de ese fondo** (uno unificado, o separados por tipo: Cliente, Pago, Diario general y, en Santa
+Fe, Liquidación). En Archivos cada ERP dice de qué fondo es. El fondo se elige con el desplegable de Opciones
+(mientras la versión no corrió) y ahí mismo se valida: si el ERP elegido es del otro fondo, un aviso te ofrece
+usar ese fondo o volver a elegir el ERP, y no deja correr hasta resolverlo. El fondo se ve en todos los pasos. En Opciones
 elegís si el ERP se bajó con *sólo saldos abiertos* o *completo*: cambia qué dice el resultado cuando un
 comprobante está de un solo lado. Devuelve un Excel con dos solapas: *Resumen* (totales, cantidades por
 estado, alertas y archivos usados) y *Conciliación general* (una fila por comprobante con saldo SGA,
@@ -142,7 +148,11 @@ saldos abiertos*, un comprobante de SGA que no figura en el ERP se compara contr
 saldo en SGA es cero y DIFERENCIA si no. Un movimiento pendiente de imputación de SGA que se refiere a una
 factura sale en su propia fila, con tipo PENDIENTE, y no se suma al saldo de esa factura. En los
 subrecibos, la columna Tipo muestra el comprobante principal al que pertenecen (RC-X para recibos, OP-X
-para órdenes de pago); la comparación sigue siendo por subrecibo.
+para órdenes de pago); la comparación sigue siendo por subrecibo. A la izquierda de Comprobante están
+**Fecha SGA** y **Fecha ERP**, la fecha de ese comprobante en cada sistema (en SGA, la de la factura, o la del
+comprobante de imputación cuando la fila es de un recibo, subrecibo o pendiente); una vacía quiere decir que
+ese sistema no tiene el comprobante o no trae la fecha. Si las dos fechas son distintas, se pintan de
+anaranjado.
 
 **Controles SGA.** Pide sólo el histórico completo de SGA y la fecha de corte. Devuelve los seis
 controles de siempre, cada uno en su Excel: netos e impuestos, datos obligatorios, servicios
@@ -202,6 +212,11 @@ ejecutarlo. Es una herramienta de una persona por PC; lo que se comparte es el r
 En Configuración también está **Limpieza**: borra los Excel de entrada que ninguna versión final usa
 (son los que ocupan lugar); los resultados y las revisiones se conservan.
 
+En esa carpeta queda también el **registro** de la herramienta: anota cada vez que se abre y se cierra
+(con el motivo: desde la pantalla, para reiniciarse o por inactividad), si la vez anterior terminó sin
+cerrarse bien, los errores, las caídas del programa y cuánto tardó cada Excel de origen. Se descarga en un solo archivo desde Configuración → La herramienta →
+**Reportar un problema**.
+
 ## Problemas frecuentes
 
 | Qué ves | Qué hacer |
@@ -209,7 +224,8 @@ En Configuración también está **Limpieza**: borra los Excel de entrada que ni
 | Hacés doble clic y no se abre nada, o se cierra una ventana negra enseguida | Falta Python o se instaló sin "Add Python to PATH". Instalalo de nuevo desde python.org marcando esa casilla. Si sigue igual, abrí `Reportes de cierre - consola.bat`: deja la ventana abierta con el mensaje, y ese mensaje es lo que hay que mandar. |
 | La página dice "Abrí la herramienta desde su acceso directo" | Entraste a la dirección guardada en el navegador de otra vez. Cerrá esa pestaña y volvé a hacer doble clic en `Reportes de cierre.bat` (o en su acceso directo). |
 | Una franja dice que la herramienta se actualizó | Se instaló una versión nueva con la herramienta abierta. Tocá **Reiniciar la herramienta** en la franja: se cierra y se vuelve a abrir sola en unos segundos. |
-| "No se pudo hablar con la herramienta. ¿Se cerró?" | La herramienta se apagó (se apaga sola después de tres horas sin uso). Volvé a abrirla desde el acceso directo; lo que tenías guardado sigue ahí. |
+| Una franja roja dice "Se perdió la conexión con la herramienta", o "No se pudo hablar con la herramienta" | La herramienta se cerró: se apagó o suspendió la PC, se cerró el proceso o falló. Volvé a abrirla desde el acceso directo; lo que tenías guardado sigue ahí. Los reportes y Excel de origen que estaban en curso aparecen como interrumpidos en Tareas: volvé a pedirlos. Si te pasa seguido, en Configuración → La herramienta tocá **Reportar un problema** y mandá el archivo a quien te da soporte. |
+| Una franja dice que la herramienta "se volvió a abrir en otra pestaña" | La abriste de nuevo (o se reinició) y esta pestaña quedó vieja. Seguí en la pestaña nueva y cerrá ésta. |
 | "No reconocí qué reporte es" | El archivo no tiene las columnas del reporte original. Fijate que sea el Excel descargado del sistema, sin editar, y que la hoja de datos esté entera (no un resumen). Si es un formato nuevo, avisá a quien te dio la herramienta. |
 | "Hay dos archivos de …; dejá uno solo" o "Archivo duplicado por contenido" | Subiste dos veces el mismo archivo, o dos del mismo tipo que no son tramos. Sacá uno. Si son las dos partes de un reporte cortado, agregalos los dos en la misma entrada. |
 | "El archivo supera los … MB permitidos" | El límite se sube en Configuración. Antes fijate que sea el archivo correcto: un histórico de SGA pesa unas decenas de MB. |
@@ -224,8 +240,9 @@ En Configuración también está **Limpieza**: borra los Excel de entrada que ni
 
 En el menú de los tres puntos, arriba a la derecha, está **Cerrar la herramienta** (también en
 Configuración). Si hay un reporte corriendo te
-avisa para que esperes o lo canceles. Cerrar la pestaña del navegador no la apaga: sigue trabajando y
-se apaga sola después de tres horas sin uso. Para volver a abrirla, doble clic en `Reportes de cierre.bat`
+avisa para que esperes o lo canceles. Mientras la tengas abierta en el navegador no se apaga, aunque no
+la uses. Cerrar la pestaña tampoco la apaga en el momento: sigue trabajando y se apaga sola tres horas
+después de cerrar la última pestaña. Para volver a abrirla, doble clic en `Reportes de cierre.bat`
 o en su acceso directo: si ya estaba abierta, simplemente te lleva a la pantalla.
 
 En el mismo menú está **Reiniciar la herramienta**: la cierra y la vuelve a abrir sola en unos segundos,

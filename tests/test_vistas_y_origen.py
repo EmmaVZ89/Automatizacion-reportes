@@ -342,6 +342,37 @@ class OrigenTests(unittest.TestCase):
             self.assertTrue(bus.eventos[-1][1].get('listo'))
             self.assertEqual(o.en_curso(), [])
 
+    def test_pedir_la_copia_mientras_se_arma_no_traba_la_herramienta(self):
+        # Al terminar una corrida la copia arranca sola; si en ese rato se entra a Resultados, la pantalla la pide de
+        # nuevo. Ese segundo pedido se quedaba esperando para siempre (tomaba un candado y, sin soltarlo, pedía el
+        # estado, que toma el mismo) y con él toda la herramienta: el estado, el visor de Tareas y la copia misma.
+        import threading
+        with carpeta_temporal() as d:
+            dom, e = _conciliacion_corrida(d)
+            o = Origenes(dom)
+            seguir = threading.Event()
+            original = o._correr
+
+            def correr_lento(*args):
+                seguir.wait(10)
+                return original(*args)
+            with mock.patch.object(o, '_correr', side_effect=correr_lento):
+                o.preparar(e)  # la copia que arranca sola
+                respuestas = []
+                segundo = threading.Thread(target=lambda: respuestas.append(o.preparar(e)), daemon=True)
+                segundo.start()  # la pantalla la pide mientras se arma
+                segundo.join(3)
+                trabado = segundo.is_alive()
+                seguir.set()
+                self.assertFalse(trabado, 'el segundo pedido de la copia se quedó esperando')
+                self.assertTrue(respuestas[0]['preparando'])
+                self.assertEqual([x['ejecucionId'] for x in o.en_curso()], [e['id']])
+                for _ in range(200):
+                    if o.estado(e)['listo']:
+                        break
+                    time.sleep(0.1)
+                self.assertTrue(o.estado(e)['listo'])
+
     def test_sin_trazabilidad_o_sin_archivo_avisa_en_lenguaje_llano(self):
         with carpeta_temporal() as d:
             dom, e = _conciliacion_corrida(d)

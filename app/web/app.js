@@ -114,6 +114,7 @@
     try {
       r = await fetch(ruta, init);
     } catch (e) {
+      revisarConexion();
       throw new Error('No se pudo hablar con la herramienta. Si la cerraste, volvé a abrirla desde su acceso directo.');
     } finally {
       clearTimeout(lento);
@@ -121,6 +122,7 @@
     }
     const tipo = r.headers.get('Content-Type') || '';
     const datos = tipo.includes('json') ? await r.json() : await r.text();
+    if (r.status === 403) revisarConexion();  // la herramienta se volvió a abrir: esta pestaña quedó con la sesión vieja
     if (!r.ok) { const e = new Error((datos && datos.error) || `Error ${r.status}`); e.status = r.status; throw e; }
     return datos;
   }
@@ -133,7 +135,12 @@
       el('div', { class: 'texto' }, texto),
       el('button', { type: 'button', class: 'cerrar', 'aria-label': 'Cerrar aviso', onclick: () => quitar() }, icono('i-x')),
       el('span', { class: 'tiempo', style: `animation-duration:${ms}ms` }));
-    const quitar = () => { if (!caja.isConnected) return; caja.classList.add('saliendo'); setTimeout(() => caja.remove(), 250); };
+    const quitar = () => {
+      if (!caja.isConnected || caja.classList.contains('saliendo')) return;
+      caja.style.setProperty('--alto-aviso', caja.offsetHeight + 'px');
+      caja.classList.add('saliendo');
+      setTimeout(() => caja.remove(), 330);
+    };
     $('#avisos').appendChild(caja);
     setTimeout(quitar, ms);
     return { cerrar: quitar };
@@ -432,7 +439,7 @@
         progreso: nuevo === 'curso' && typeof tr.progreso === 'number' ? tr.progreso : null,
         detalle: nuevo === 'espera' ? 'Espera tu acción: entrá y seguí las indicaciones.' : (tr.paso || ''),
         resultado: nuevo === 'ok' ? 'Terminó bien: ya podés revisar los resultados.' : nuevo === 'cancelada' ? 'Se canceló.' : nuevo === 'error' ? (tr.error || 'Terminó con un error.') : '',
-        fin: tr.fin ? tr.fin * 1000 : null,
+        fin: tr.fin ? tr.fin * 1000 : null, interrumpida: false,
         enlace: `#/ejecucion/${encodeURIComponent(tr.ejecucionId)}/${nuevo === 'ok' ? 4 : 3}`,
         cancelar: async () => {
           if (!await confirmar('¿Cancelar el reporte?', 'Se detiene la corrida. Podés volver a correrlo cuando quieras.', 'Cancelar el reporte', 'peligro')) return;
@@ -448,6 +455,7 @@
     function desdeOrigen(o) {
       const clave = 'origen:' + o.ejecucionId;
       let t = lista.get(clave);
+      if (t && t.interrumpida) Object.assign(t, { interrumpida: false, estado: 'curso', fin: null, resultado: '' });
       if (!t || (!activa(t) && !o.listo && !o.error)) {
         t = { clave, titulo: 'Preparando el Excel de origen', detalle: 'Copia de consulta de los Excel de entrada; se hace una sola vez.', inicio: Date.now(), estado: 'curso', progreso: 0, fin: null, resultado: '' };
         lista.set(clave, t);
@@ -458,13 +466,22 @@
       else { t.estado = 'curso'; t.progreso = typeof o.progreso === 'number' ? o.progreso : null; }
       cambio(t);
     }
+    // Se perdió la conexión: los reportes y las copias en curso no van a avisar que terminaron.
+    function interrumpir(texto) {
+      for (const t of lista.values()) {
+        if (!activa(t) || !/^(origen|trabajo):/.test(t.clave)) continue;
+        Object.assign(t, { estado: 'error', interrumpida: true, resultado: texto, fin: Date.now(), progreso: null });
+        cambio(t);
+      }
+    }
+    const origenesPendientes = () => [...lista.values()].filter(t => t.clave.startsWith('origen:') && (activa(t) || t.interrumpida)).map(t => t.clave.slice(7));
     function sacarTerminadas() {
       for (const [k, t] of lista) if (!activa(t)) lista.delete(k);
       sinVer = 0;
       pintarBoton();
       pintarPanel();
     }
-    return { iniciar, correr, enCurso, desdeTrabajo, desdeOrigen, abrir, sacarTerminadas, pintarBoton };
+    return { iniciar, correr, enCurso, desdeTrabajo, desdeOrigen, interrumpir, origenesPendientes, abrir, sacarTerminadas, pintarBoton };
   })();
   // ---------------------------------------------------------------- tema
   function aplicarTema(t) {
@@ -505,7 +522,7 @@
   };
   const AYUDA_GENERAL = [
     { clave: 'primeros', titulo: 'Cómo es un cierre', icono: 'i-cierre', partes: [
-      ['ol', ['Creá el cierre del mes (botón "Nuevo cierre") con su fecha de corte.', 'Entrá a cada reporte del cierre y seguí sus cinco pasos: Archivos, Opciones, Ejecución, Resultados y Exportar.', 'Revisá los resultados: marcá filas como revisadas u omitidas y anotá observaciones.', 'Cuando un reporte quede listo, marcalo como resultado final. Con los cuatro reportes finales, el cierre está completo.']],
+      ['ol', ['Creá el cierre del mes (botón "Nuevo cierre") con su fecha de corte.', 'Entrá a cada reporte del cierre y seguí sus cinco pasos: Archivos, Opciones, Ejecución, Resultados y Exportar.', 'Revisá los resultados: marcá filas como revisadas u omitidas y anotá observaciones.', 'Cuando un reporte quede listo, marcalo como resultado final. Con todos los reportes finales (la Conciliación general, de los dos fondos), el cierre está completo.']],
       ['p', 'Podés volver a correr un reporte cuantas veces quieras: cada corrida es una versión nueva y lo que ya revisaste pasa solo a la nueva.'],
     ] },
     { clave: 'revision', titulo: 'Revisar los resultados', icono: 'i-check-circulo', partes: [
@@ -519,6 +536,7 @@
         ['chip', 'NO EVALUADO', 'Figura sólo en ERP, con saldo cero.'],
         ['chip warn', 'SIN COMPROBANTE EN SGA', 'Un movimiento de SGA sin número de comprobante: se revisa a mano.']]],
       ['p', 'Tipo PENDIENTE: un "movimiento pendiente de imputación" de SGA referido a una factura se muestra en su propia fila y no se suma al saldo del comprobante. Tipo RC-X, RC-R u OP-X: el recibo u orden de pago al que pertenece el subrecibo; el cruce se hace por subrecibo.'],
+      ['p', 'Fecha SGA y Fecha ERP: la fecha del comprobante en cada sistema. En SGA es la de la factura, o la del comprobante de imputación cuando la fila es de un recibo, subrecibo o pendiente; en ERP, la Fecha de la transacción. Si una está vacía, ese sistema no tiene el comprobante o no trae la fecha.'],
     ] },
     { clave: 'tramos', titulo: 'Archivos cortados en dos', icono: 'i-capas', partes: [
       ['p', 'Cuando un reporte tiene muchas filas, el sistema corta la descarga cerca de las 454.000 filas y entrega dos (o más) archivos que se complementan.'],
@@ -535,7 +553,7 @@
         ['¿Dónde veo lo que está tardando?', 'En el botón de Tareas, arriba a la derecha, al lado de Ayuda. Muestra los reportes que corren, los Excel que se arman y los archivos que se suben, con su avance y su resultado. Si pedís de nuevo algo que ya está en curso, la herramienta te avisa en lugar de repetirlo.'],
         ['Apareció una franja que dice que la herramienta se actualizó', 'Se instaló una versión nueva con la herramienta abierta. Tocá "Reiniciar la herramienta" en la franja: se cierra y se vuelve a abrir sola en unos segundos.'],
         ['¿Cómo reinicio la herramienta?', 'Desde el menú de los tres puntos, "Reiniciar la herramienta". Sirve si algo quedó trabado o después de instalar una versión nueva. Lo que tenés guardado no se pierde; si hay un reporte corriendo, te pide que esperes o lo canceles.'],
-        ['¿Cómo cierro la herramienta?', 'Desde el menú de los tres puntos, "Cerrar la herramienta". Igual se apaga sola después de tres horas sin uso.'],
+        ['¿Cómo cierro la herramienta?', 'Desde el menú de los tres puntos, "Cerrar la herramienta". Si la dejás abierta en el navegador no se apaga; si cerrás la pestaña, se apaga sola tres horas después.'],
         ['¿Dónde está el acceso directo?', 'La herramienta lo crea sola la primera vez que se abre, en el Escritorio, con el nombre "Reportes de cierre". Si lo borraste, en Configuración está "Crear el acceso directo en el Escritorio".']]],
     ] },
     { clave: 'problemas', titulo: 'Si algo sale mal', icono: 'i-alerta', partes: [
@@ -628,7 +646,7 @@
     estado.bienvenidaAbierta = true;
     const diapos = [
       { titulo: 'Te damos la bienvenida', texto: 'Esta herramienta reúne los controles del cierre mensual en un solo lugar. Te guía paso a paso y guarda todo lo que hacés, mes a mes.' },
-      { titulo: 'Un cierre por mes', texto: 'Creás el cierre del mes con su fecha de corte. Adentro están los cuatro reportes: Conciliación general, Controles SGA, Control de Mora y Control de cheques.' },
+      { titulo: 'Un cierre por mes', texto: 'Creás el cierre del mes con su fecha de corte. Adentro están sus reportes: la Conciliación general (una por fondo de riesgo: Fondo General y FERF Prov. Santa Fe), Controles SGA, Control de Mora y Control de cheques.' },
       { titulo: 'Cada reporte, en cinco pasos', texto: 'Elegís los Excel descargados, revisás las opciones, lo corrés, revisás los resultados y descargás el Excel trabajado.' },
       { titulo: 'La revisión queda guardada', texto: 'Marcá cada fila como revisada u omitida y anotá observaciones. Lo que marques pasa solo a la próxima versión del mes. La ayuda está siempre arriba a la derecha.' },
     ];
@@ -715,7 +733,6 @@
     const partes = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
     const vista = partes[0] || 'inicio';
     marcarNav({ inicio: 'inicio', cierres: 'cierres', cierre: 'cierres', ejecucion: 'cierres', facturas: 'facturas', historial: 'historial', configuracion: 'inicio' }[vista]);
-    $('#vista').classList.toggle('ancha', vista === 'ejecucion');
     estado.vista = { nombre: vista, partes };
     detenerSondeo();
     soltarCabecera();
@@ -723,6 +740,13 @@
     cerrarMenu();
     const r = { inicio: () => vistaInicio(), cierres: () => vistaInicio(true), cierre: () => vistaCierre(partes[1]), ejecucion: () => vistaEjecucion(partes[1], partes[2]), facturas: vistaFacturas, historial: vistaHistorial, configuracion: async () => { history.replaceState(null, '', '#/inicio'); await vistaInicio(); await abrirConfiguracion(); } }[vista];
     return (r || vistaInicio)().catch(avisarError);
+  }
+  // Vacía #vista para la pantalla nueva y le da su ancho recién ahora, junto con el contenido nuevo (si se hacía al
+  // cambiar de dirección, la pantalla anterior se estiraba o se achicaba un instante mientras llegaban los datos).
+  function pantallaNueva() {
+    const v = $('#vista');
+    v.classList.toggle('ancha', !!estado.vista && estado.vista.nombre === 'ejecucion');
+    return limpiar(v);
   }
   function marcarNav(nav) {
     for (const a of document.querySelectorAll('[data-nav]')) a.classList.toggle('activa', a.dataset.nav === nav);
@@ -751,7 +775,8 @@
       } else if (estado.vista && ['inicio', 'cierres', 'cierre', 'historial', 'facturas'].includes(estado.vista.nombre)) enSilencio(enrutar);
     });
     f.addEventListener('cierre', () => { if (estado.vista && ['inicio', 'cierres'].includes(estado.vista.nombre)) enSilencio(enrutar); });
-    f.onerror = () => { setTimeout(() => { if (estado.fuente === f) conectarEventos(); }, 5000); };
+    f.onopen = () => { if (estado.eventosAbiertos++ > 0 || conexion.perdida) reconectada(); };
+    f.onerror = () => { revisarConexion(); setTimeout(() => { if (estado.fuente === f) conectarEventos(); }, 5000); };
   }
   // Redibujo que no pidió el usuario (llegó un evento): sin las animaciones de entrada, para que no parpadee.
   async function enSilencio(fn) {
@@ -761,6 +786,46 @@
     finally { setTimeout(() => v.classList.remove('quieta'), 120); }
   }
   // La herramienta se actualizó con la pantalla abierta: el código nuevo recién corre al cerrarla y abrirla.
+  // Conexión con la herramienta. Si se cierra (o se apaga la PC), la pantalla lo dice en lugar de quedar esperando y
+  // los reportes y copias en curso pasan a interrumpidos. Si vuelve (la PC se despertó), se pone al día.
+  const conexion = { perdida: false, revisando: false };
+  estado.eventosAbiertos = 0;
+  async function revisarConexion() {
+    if (conexion.revisando || estado.saliendo) return;
+    conexion.revisando = true;
+    try {
+      let status = 0;
+      try { status = (await fetch('/api/estado', { credentials: 'same-origin', cache: 'no-store' })).status; } catch (e) { status = 0; }
+      if (status === 200) { if (conexion.perdida) await reconectada(); return; }
+      if (estado.saliendo) return;
+      $('#texto-conexion').textContent = status === 403
+        ? 'La herramienta se volvió a abrir en otra pestaña: seguí en esa, o cerrá ésta y abrila con el acceso directo "Reportes de cierre".'
+        : 'Se perdió la conexión con la herramienta: se cerró o se apagó la PC. Abrila de nuevo con el acceso directo "Reportes de cierre"; lo que tenías guardado sigue ahí.';
+      if (conexion.perdida) return;
+      conexion.perdida = true;
+      $('#banda-conexion').classList.remove('oculto');
+      tareas.interrumpir('Se interrumpió: se perdió la conexión con la herramienta.');
+    } finally { conexion.revisando = false; }
+  }
+  async function reconectada() {
+    conexion.perdida = false;
+    $('#banda-conexion').classList.add('oculto');
+    const st = await revisarVersion();
+    if (!st) return;
+    // Lo que se pudo perder mientras no había conexión: copias que terminaron, reportes que cambiaron de estado.
+    const enServidor = new Set((st.origenes || []).map(o => o.ejecucionId));
+    for (const o of st.origenes || []) tareas.desdeOrigen(o);
+    for (const id of tareas.origenesPendientes().filter(x => !enServidor.has(x))) {
+      try {
+        const o = await api('GET', `/api/ejecuciones/${encodeURIComponent(id)}/origen/estado`, undefined, { silencioso: true });
+        tareas.desdeOrigen({ ejecucionId: id, listo: !!o.listo, error: o.listo ? null : (o.error || 'Se interrumpió. Entrá a Resultados de esa versión para retomarla.') });
+      } catch (err) { /* queda como está */ }
+    }
+    try {
+      const desde = Date.now() / 1000 - 12 * 3600;
+      for (const tr of await api('GET', '/api/trabajos', undefined, { silencioso: true })) if ((tr.inicio || 0) >= desde) tareas.desdeTrabajo(tr);
+    } catch (err) { /* queda como está */ }
+  }
   async function revisarVersion() {
     try {
       const st = await api('GET', '/api/estado', undefined, { silencioso: true });
@@ -798,11 +863,29 @@
     return nodo;
   }
   const reportesCierre = () => estado.app.reportes.filter(r => r.ambito !== 'herramienta');
+  // La variante de una ejecución (el fondo de riesgo, en la conciliación): {valor, titulo, corto}, o null.
+  function varianteDe(reporte, e) {
+    const v = reporte && reporte.variantes;
+    if (!v) return null;
+    const valor = (e && (e.variante || (e.parametros || {})[v.parametro])) || v.opciones[0].valor;
+    return v.opciones.find(o => o.valor === valor) || v.opciones[0];
+  }
+  const chipVariante = (variante, clase = '') => variante ? el('span', { class: ('chip fondo ' + clase).trim(), title: 'Fondo de riesgo de esta conciliación' }, icono('i-caja'), variante.titulo) : null;
+  // Lo que tiene que quedar listo en un cierre: un ítem por reporte, o uno por variante (cada fondo de la conciliación
+  // es obligatorio y tiene sus versiones y su resultado final).
+  function itemsCierre(c) {
+    const items = [];
+    for (const r of reportesCierre()) {
+      const info = c.reportes[r.codigo] || null;
+      if (r.variantes) for (const o of r.variantes.opciones) items.push({ r, variante: o, info: (info && info.variantes && info.variantes[o.valor]) || null });
+      else items.push({ r, variante: null, info });
+    }
+    return items;
+  }
   function resumenCierre(c) {
-    const lista = reportesCierre();
+    const lista = itemsCierre(c);
     let finales = 0, terminados = 0, curso = 0, pendientesRev = 0;
-    for (const r of lista) {
-      const info = c.reportes[r.codigo];
+    for (const { info } of lista) {
       if (!info || !info.ultima) continue;
       const u = info.final || info.ultima;
       if (info.final) finales++;
@@ -820,7 +903,7 @@
     const [cierres, app] = await Promise.all([api('GET', '/api/cierres'), api('GET', '/api/estado')]);
     if (!vigente(sello)) return;
     estado.app = app;
-    const main = limpiar($('#vista'));
+    const main = pantallaNueva();
     const actual = periodoDe(hoy());
     const enCurso = cierres.find(c => !c.cerrado && !c.importado) || null;
     const contenedor = el('div', { class: 'escalonado' });
@@ -840,7 +923,7 @@
         el('div', { class: 'hero-texto' },
           el('span', { class: 'hero-etiqueta' }, icono('i-chispa'), cierres.length ? 'Todo al día' : 'Para empezar'),
           el('h1', null, cierres.length ? `Empezá el cierre de ${periodoLargo(actual).toLowerCase()}` : 'Empezá tu primer cierre'),
-          el('p', { class: 'bajada' }, 'Un cierre agrupa los cuatro reportes del mes. Lo creás con su fecha de corte y después corrés cada reporte paso a paso.'),
+          el('p', { class: 'bajada' }, 'Un cierre agrupa los reportes del mes. Lo creás con su fecha de corte y después corrés cada reporte paso a paso.'),
           el('div', { class: 'acciones-fila' },
             btn(`Crear el cierre de ${periodoLargo(actual).toLowerCase()}`, () => nuevoCierre(cierres.some(c => c.periodo === actual) ? null : actual).catch(avisarError), 'primario grande llama', { icono: 'i-mas' }),
             btn('Ver cómo funciona', () => bienvenida(), 'fantasma', { icono: 'i-libro' }))),
@@ -849,7 +932,7 @@
       const res = resumenCierre(enCurso);
       const listos = res.finales + res.terminados;
       const bajada = res.sinCorrer === res.total ? 'Todavía no corriste ningún reporte de este cierre. Empezá por el que tengas los archivos listos.'
-        : res.finales === res.total ? 'Los cuatro reportes tienen su resultado final. El cierre está completo.'
+        : res.finales === res.total ? 'Todos los reportes tienen su resultado final. El cierre está completo.'
         : `Faltan ${res.total - listos === 1 ? 'un reporte' : (res.total - listos) + ' reportes'} por correr` + (res.pendientesRev ? (res.pendientesRev === 1 ? ' y hay una fila pendiente de revisar.' : ` y hay ${n(res.pendientesRev)} filas pendientes de revisar.`) : '.');
       contenedor.appendChild(el('section', { class: 'hero' }, el('div', { class: 'hero-cuadricula' }), el('div', { class: 'hero-brillo' }),
         el('div', { class: 'hero-texto' },
@@ -878,19 +961,19 @@
       lista.appendChild(el('a', { class: 'tarjeta fila-cierre', href: '#/cierre/' + encodeURIComponent(c.id) },
         el('div', { class: 'hoja-mes', 'aria-hidden': 'true' }, el('span', { class: 'mes' }, (MESES[parseInt(m[2], 10) - 1] || '').slice(0, 3).toUpperCase()), el('span', { class: 'anio' }, m[1] || '')),
         el('div', null, el('div', { class: 'nombre' }, periodoLargo(c.periodo)), el('div', { class: 'detalle' }, `Corte ${fechaCorta(c.corte)}` + (c.importado ? ' · importado' : '') + (c.cerrado ? ' · completo' : ''))),
-        el('div', { class: 'mini-reportes' }, reportesCierre().map(r => {
-          const info = c.reportes[r.codigo];
-          return el('span', { class: 'mini-reporte ' + claseEstado(info), title: textoEstadoReporte(info, r) }, tileReporte(r), info && info.final ? 'Final' : info && info.ultima ? (ESTADO_TEXTO[info.ultima.estado] || '') : 'Sin correr');
-        })),
+        el('div', { class: 'mini-reportes' }, itemsCierre(c).map(({ r, variante, info }) =>
+          el('span', { class: 'mini-reporte ' + claseEstado(info), title: textoEstadoReporte(info, r, variante) }, tileReporte(r), variante ? el('b', { class: 'mini-variante' }, variante.corto) : null,
+            info && info.final ? 'Final' : info && info.ultima ? (ESTADO_TEXTO[info.ultima.estado] || '') : 'Sin correr'))),
         el('span', { class: 'chip ' + (res.finales === res.total ? 'ok' : 'borde') }, `${res.finales + res.terminados}/${res.total}`)));
     }
     contenedor.appendChild(lista);
     if (!soloCierres && estado.conf && !estado.conf.bienvenida) bienvenida(empezar => { if (empezar && !cierres.length) nuevoCierre(actual).catch(avisarError); });
   }
-  function textoEstadoReporte(info, r) {
-    if (!info || !info.ultima) return `${r.nombre}: sin correr`;
+  function textoEstadoReporte(info, r, variante = null) {
+    const nombre = r.nombre + (variante ? ` (${variante.titulo})` : '');
+    if (!info || !info.ultima) return `${nombre}: sin correr`;
     const u = info.final || info.ultima;
-    return `${r.nombre}: ${ESTADO_TEXTO[u.estado] || u.estado}, versión ${u.version}` + (u.estado === 'ok' ? (u.revision.pendientes === 1 ? ', una fila pendiente' : `, ${n(u.revision.pendientes)} filas pendientes`) : '') + (info.final ? ', resultado final' : '');
+    return `${nombre}: ${ESTADO_TEXTO[u.estado] || u.estado}, versión ${u.version}` + (u.estado === 'ok' ? (u.revision.pendientes === 1 ? ', una fila pendiente' : `, ${n(u.revision.pendientes)} filas pendientes`) : '') + (info.final ? ', resultado final' : '');
   }
 
   // ---------------------------------------------------------------- vista: cierre
@@ -901,7 +984,7 @@
     if (!vigente(sello)) return;
     estado.app = app;
     if (c.herramienta) { location.hash = '#/facturas'; return; }
-    const main = limpiar($('#vista'));
+    const main = pantallaNueva();
     const res = resumenCierre(c);
     const editar = async () => {
       const corte = el('input', { type: 'date', id: 'editar-corte', value: c.corte });
@@ -938,11 +1021,12 @@
           el('div', null, el('span', { class: 'cuadro', style: 'background:var(--line2)' }), `${res.sinCorrer + res.curso} por hacer`)))));
     main.appendChild(el('div', { class: 'titulo-seccion' }, el('h2', null, 'Reportes del cierre')));
     const grilla = el('div', { class: 'grilla-2 escalonado' });
-    for (const r of reportesCierre()) grilla.appendChild(tarjetaReporte(c, r));
+    for (const { r, variante } of itemsCierre(c)) grilla.appendChild(tarjetaReporte(c, r, variante));
     main.appendChild(grilla);
   }
-  function tarjetaReporte(c, r) {
-    const info = c.reportes[r.codigo] || { versiones: 0, ultima: null, final: null };
+  function tarjetaReporte(c, r, variante = null) {
+    const vacio = { versiones: 0, ultima: null, final: null };
+    const info = (variante ? ((c.reportes[r.codigo] || {}).variantes || {})[variante.valor] : c.reportes[r.codigo]) || vacio;
     const u = info.ultima;
     const clase = claseEstado(info);
     const tarjeta = el('article', { class: 'tarjeta tarjeta-reporte ' + clase });
@@ -956,7 +1040,7 @@
     const abrir = (e, paso) => { location.hash = '#/ejecucion/' + encodeURIComponent(e.id) + (paso ? '/' + paso : ''); };
     const nueva = async base => {
       try {
-        const e = await api('POST', '/api/ejecuciones', { cierre: c.id, reporte: r.codigo });
+        const e = await api('POST', '/api/ejecuciones', { cierre: c.id, reporte: r.codigo, variante: variante ? variante.valor : undefined });
         if (base) await api('PATCH', '/api/ejecuciones/' + encodeURIComponent(e.id), { entradas: base.entradas || {}, parametros: base.parametros || {} });
         abrir(e, base ? '2' : '1');
       } catch (err) { avisarError(err); }
@@ -969,13 +1053,14 @@
     else if (u.estado === 'corriendo' || u.estado === 'esperando') principal = btn(u.estado === 'esperando' ? 'Ver qué necesita' : 'Ver el avance', () => abrir(u, '3'), 'primario', { icono: u.estado === 'esperando' ? 'i-mano' : 'i-reloj' });
     else if (u.estado === 'ok') { principal = btn('Revisar resultados', () => abrir(u, '4'), 'primario', { icono: 'i-tabla' }); secundarios.push(btn('Correr de nuevo', () => nueva(u), 'fantasma chico', { icono: 'i-refrescar' })); }
     else { principal = btn('Volver a correr', () => nueva(u), 'primario', { icono: 'i-refrescar' }); secundarios.push(btn('Ver qué pasó', () => abrir(u, '3'), 'fantasma chico', { icono: 'i-info' })); }
-    tarjeta.append(el('div', { class: 'cabeza' }, tileReporte(r), el('div', null, el('h3', null, r.nombre), el('div', { class: 'desc' }, r.descripcion))), estadoFila);
+    tarjeta.append(el('div', { class: 'cabeza' }, tileReporte(r), el('div', null, el('h3', null, r.nombre), variante ? chipVariante(variante, 'en-tarjeta') : null,
+      el('div', { class: 'desc' }, variante ? `Conciliación de ${variante.titulo}: el histórico de SGA es el mismo; el ERP, el de este fondo.` : r.descripcion))), estadoFila);
     if (u && u.estado === 'ok') {
       const rev = u.revision;
       tarjeta.append(barraRevision(rev), el('div', { class: 'leyenda-revision' }, el('span', null, el('b', null, n(rev.pendientes)), ' pendientes'), el('span', null, el('b', null, n(rev.revisadas)), ' revisadas'), el('span', null, el('b', null, n(rev.omitidas)), ' omitidas')));
     }
     tarjeta.appendChild(el('div', { class: 'pie' }, el('div', { class: 'acciones-fila' }, principal, secundarios),
-      el('div', { class: 'acciones-fila' }, info.versiones > 1 ? enlace(`${info.versiones} versiones`, '#/historial/' + encodeURIComponent(c.id) + '/' + r.codigo, 'btn enlace chico', 'i-historial') : null,
+      el('div', { class: 'acciones-fila' }, info.versiones > 1 ? enlace(`${info.versiones} versiones`, '#/historial/' + encodeURIComponent(c.id) + '/' + r.codigo + (variante ? '/' + encodeURIComponent(variante.valor) : ''), 'btn enlace chico', 'i-historial') : null,
         el('button', { type: 'button', class: 'btn fantasma icono', title: 'Ayuda de este reporte', 'aria-label': 'Ayuda de ' + r.nombre, onclick: () => abrirAyuda('reporte-' + r.codigo) }, icono('i-ayuda')))));
     return tarjeta;
   }
@@ -988,7 +1073,7 @@
     if (!vigente(sello)) return;
     estado.app = app;
     const r = app.reportes.find(x => x.codigo === 'descarga_facturas');
-    const main = limpiar($('#vista'));
+    const main = pantallaNueva();
     const nueva = async () => {
       try { const e = await api('POST', '/api/ejecuciones', { cierre: esp.id, reporte: r.codigo }); location.hash = '#/ejecucion/' + encodeURIComponent(e.id) + '/1'; } catch (err) { avisarError(err); }
     };
@@ -1062,7 +1147,7 @@
     if (!terminal && !enCurso && paso > 2) paso = pasoDefault;
     if ((paso === 4 || paso === 5) && e.estado !== 'ok') paso = 3;
     w.paso = paso;
-    const main = limpiar($('#vista'));
+    const main = pantallaNueva();
     const esHerramienta = !!cierre.herramienta;
     marcarNav(esHerramienta ? 'facturas' : 'cierres');
     const volver = esHerramienta ? '#/facturas' : '#/cierre/' + encodeURIComponent(cierre.id);
@@ -1072,7 +1157,7 @@
       icono('i-der'), el('span', null, `${reporte.nombre}, versión ${e.version}`)));
     cabecera.appendChild(el('div', { class: 'cabecera-reporte' }, tileReporte(reporte, 'grande'),
       el('div', { class: 'titulos' }, el('h1', null, reporte.nombre),
-        el('div', { class: 'meta' }, chipEstado(e), el('span', { class: 'chip borde' }, `Versión ${e.version}`), esHerramienta ? null : el('span', { class: 'chip borde' }, icono('i-calendario'), periodoLargo(cierre.periodo)), e.final ? el('span', { class: 'chip acento' }, icono('i-bandera'), 'Resultado final') : null)),
+        el('div', { class: 'meta' }, chipEstado(e), el('span', { class: 'chip borde' }, `Versión ${e.version}`), chipVariante(varianteDe(reporte, e)), esHerramienta ? null : el('span', { class: 'chip borde' }, icono('i-calendario'), periodoLargo(cierre.periodo)), e.final ? el('span', { class: 'chip acento' }, icono('i-bandera'), 'Resultado final') : null)),
       el('div', { class: 'acciones-fila' }, el('button', { type: 'button', class: 'boton-ayuda-paso', onclick: () => abrirAyuda(PASOS[paso - 1].ayuda) }, icono('i-ayuda'), '¿Cómo sigo?'), enlace('Volver', volver, 'btn fantasma', 'i-volver'))));
     const pasos = el('nav', { class: 'pasos', 'aria-label': 'Pasos del reporte' }, el('div', { class: 'linea' }, el('div', { style: `width:${(paso - 1) * 25}%` })));
     PASOS.forEach((p, i) => {
@@ -1097,7 +1182,7 @@
       let nueva = null;
       const datos = { entradas: w.e.entradas || {}, parametros: w.e.parametros || {} };
       try {
-        nueva = await api('POST', '/api/ejecuciones', { cierre: w.cierre.id, reporte: w.reporte.codigo });
+        nueva = await api('POST', '/api/ejecuciones', { cierre: w.cierre.id, reporte: w.reporte.codigo, variante: (varianteDe(w.reporte, w.e) || {}).valor });
         await api('PATCH', '/api/ejecuciones/' + encodeURIComponent(nueva.id), datos);
         await api('POST', `/api/ejecuciones/${encodeURIComponent(nueva.id)}/ejecutar`, datos);
         estado.w = null;
@@ -1112,7 +1197,7 @@
   function nuevaVersion(w) {
     return async () => {
       try {
-        const e = await api('POST', '/api/ejecuciones', { cierre: w.cierre.id, reporte: w.reporte.codigo });
+        const e = await api('POST', '/api/ejecuciones', { cierre: w.cierre.id, reporte: w.reporte.codigo, variante: (varianteDe(w.reporte, w.e) || {}).valor });
         await api('PATCH', '/api/ejecuciones/' + encodeURIComponent(e.id), { entradas: w.e.entradas || {}, parametros: w.e.parametros || {} });
         estado.w = null;
         aviso(`Se creó la versión ${e.version}. Revisá las opciones y corré el reporte.`, 'info');
@@ -1209,7 +1294,7 @@
         // En una versión que ya corrió se ven sólo los archivos que usó; si no, también los del cierre que sirven acá.
         const candidatos = cierre.archivos.filter(a => editable ? a.tipo === ent.tipo || sel.has(a.id) : sel.has(a.id));
         for (const a of candidatos) {
-          const detalle = [a.hoja ? `hoja ${a.hoja}` : null, a.filas != null ? `${n(a.filas)} filas` : null, bytesLegibles(a.bytes), 'agregado ' + fechaCorta(a.subido)].filter(Boolean).join(' · ');
+          const detalle = [a.fondo ? (a.fondo === 'mezcla' ? 'mezcla los dos fondos' : `ERP de ${a.fondo}`) : null, a.hoja ? `hoja ${a.hoja}` : null, a.filas != null ? `${n(a.filas)} filas` : null, bytesLegibles(a.bytes), 'agregado ' + fechaCorta(a.subido)].filter(Boolean).join(' · ');
           const casilla = el('input', { type: 'checkbox', checked: sel.has(a.id), disabled: !editable, 'aria-label': 'Usar ' + a.nombre, onchange: ev => { if (ev.target.checked) sel.add(a.id); else sel.delete(a.id); pintar(); } });
           listaArchivos.appendChild(el('label', { class: 'archivo' + (sel.has(a.id) ? ' elegido' : '') + (recienSubidos.has(a.id) ? ' nuevo' : '') }, casilla, el('span', { class: 'icono-archivo' }, icono('i-planilla')),
             el('span', { class: 'datos' }, el('span', { class: 'nombre' }, a.nombre), el('span', { class: 'detalle' }, detalle), a.aviso ? el('span', { class: 'detalle advertencia' }, a.aviso) : null),
@@ -1297,7 +1382,29 @@
     const principales = visibles.filter(esPrincipal);
     const avanzadas = visibles.filter(p => !esPrincipal(p));
     const form = el('form', { onsubmit: ev => ev.preventDefault() });
-    if (principales.length) form.appendChild(el('div', { class: 'grupo-opciones' }, principales.map(p => campoParametro(p, valores, editable, propuestas))));
+    // El fondo (la variante): al cambiarlo, la versión pasa a la serie de ese fondo y el encabezado lo muestra.
+    const alCambiarVariante = p => reporte.variantes && p.clave === reporte.variantes.parametro ? async () => {
+      try { estado.w.e = await api('PATCH', '/api/ejecuciones/' + encodeURIComponent(e.id), { parametros: valores }); await vistaEjecucion(e.id, '2', true); } catch (err) { avisarError(err); }
+    } : null;
+    if (principales.length) form.appendChild(el('div', { class: 'grupo-opciones' }, principales.map(p => campoParametro(p, valores, editable, propuestas, alCambiarVariante(p)))));
+    // El fondo se valida acá, donde se elige: el ERP elegido en Archivos tiene que ser de ese fondo (se reconoce por sus
+    // asientos al agregarlo al cierre).
+    const conflicto = (() => {
+      if (!editable || !reporte.variantes) return null;
+      const fondo = valores[reporte.variantes.parametro];
+      const archivos = Object.fromEntries((cierre.archivos || []).map(a => [a.id, a]));
+      const malo = Object.values(e.entradas || {}).flat().map(i => archivos[i]).find(a => a && a.fondo && a.fondo !== fondo);
+      return malo ? { archivo: malo, fondo } : null;
+    })();
+    if (conflicto) {
+      const { archivo, fondo } = conflicto;
+      const usarFondo = () => { const s = $('#par-' + reporte.variantes.parametro); s.value = archivo.fondo; s.dispatchEvent(new Event('change')); };
+      form.appendChild(el('div', { class: 'caja-error conflicto-fondo' }, icono('i-alerta'),
+        el('div', null, el('p', null, el('b', null, 'El ERP no es de este fondo. '),
+          archivo.fondo === 'mezcla' ? `${archivo.nombre}, elegido en Archivos, mezcla movimientos de los dos fondos.` : `${archivo.nombre}, elegido en Archivos, es de ${archivo.fondo} y el fondo elegido es ${fondo}.`),
+          el('div', { class: 'acciones-fila' }, archivo.fondo !== 'mezcla' ? btn(`Usar ${archivo.fondo}`, usarFondo, 'chico', { icono: 'i-caja' }) : null,
+            btn('Elegir otro ERP', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/1`; }, 'fantasma chico', { icono: 'i-izq' })))));
+    }
     if (avanzadas.length) {
       form.appendChild(el('details', { class: 'avanzadas', open: !principales.length },
         el('summary', null, icono('i-ajustes'), el('span', null, 'Opciones avanzadas ', el('span', { class: 'muted' }, `(${avanzadas.length}) normalmente no hace falta tocarlas`)), icono('i-abajo', 'flecha')),
@@ -1318,7 +1425,7 @@
             estado.w.valores = null;
             location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/3`;
           } catch (err) { avisarError(err); b.disabled = false; }
-        }, 'primario grande llama', { icono: 'i-play' })));
+        }, 'primario grande llama', { icono: 'i-play', disabled: !!conflicto, title: conflicto ? 'Primero resolvé el aviso del fondo de riesgo' : null })));
     } else {
       pie.append(el('div', { class: 'izq' }), el('div', { class: 'der' }, btn('Nueva versión con estas opciones', nuevaVersion(w), '', { icono: 'i-refrescar' })));
     }
@@ -1333,7 +1440,7 @@
       return { version: ultima.version, reglas: ultima.resumen.reglas_propuestas };
     } catch (err) { return null; }
   }
-  function campoParametro(p, valores, editable, propuestas) {
+  function campoParametro(p, valores, editable, propuestas, alCambiar = null) {
     const id = 'par-' + p.clave;
     // Las opciones de pocas alternativas y las rutas ocupan dos columnas; las listas y tablas, el ancho entero.
     const ancho = p.tipo === 'tabla' || p.tipo === 'lista' || (p.tipo === 'opcion' && (p.opciones || []).length > 3);
@@ -1344,6 +1451,10 @@
     const rotulo = texto => el('div', { class: 'rotulo' }, texto + (p.obligatorio ? ' *' : ''));
     if (p.tipo === 'fecha' || p.tipo === 'texto' || p.tipo === 'ruta' || p.tipo === 'decimal') {
       campo.append(el('label', { for: id }, p.titulo + (p.obligatorio ? ' *' : '')), el('input', { type: p.tipo === 'fecha' ? 'date' : 'text', id, value: v == null ? '' : String(v), disabled: !editable, required: !!p.obligatorio, oninput: ev => fijar(ev.target.value) }));
+    } else if (p.tipo === 'opcion' && p.desplegable) {
+      campo.append(el('label', { for: id }, p.titulo + (p.obligatorio ? ' *' : '')),
+        el('select', { id, class: 'selector', disabled: !editable, onchange: ev => { fijar(ev.target.value); if (alCambiar) alCambiar(ev.target.value); } },
+          p.opciones.map(o => el('option', { value: o.valor, text: o.titulo, selected: valores[p.clave] === o.valor }))));
     } else if (p.tipo === 'opcion') {
       campo.appendChild(rotulo(p.titulo));
       const grupo = el('div', { class: 'opciones-tarjetas', role: 'radiogroup', 'aria-label': p.titulo });
@@ -1612,7 +1723,12 @@
     let orden, ocultas;
     if (guardada) {
       orden = guardada.orden.filter(c => todas.includes(c));
-      for (const c of todas) if (!orden.includes(c)) orden.push(c);
+      // Una columna nueva del reporte va delante de la que la sigue en el orden del reporte, no al final.
+      todas.forEach((c, i) => {
+        if (orden.includes(c)) return;
+        const siguiente = todas.slice(i + 1).find(x => orden.includes(x));
+        orden.splice(siguiente ? orden.indexOf(siguiente) : orden.length, 0, c);
+      });
       ocultas = new Set(guardada.ocultas.filter(c => todas.includes(c)));
     } else {
       const def = info.vista || {};
@@ -1860,7 +1976,18 @@
     const par = TONO_RESULTADO.find(([re]) => re.test(v || ''));
     return el('span', { class: 'chip ' + (par ? par[1] : '') }, el('span', { class: 'punto' }), v);
   }
+  // Mientras se vuelve a armar un bloque cuyos datos llegan después, conserva su alto: si no, la página se acorta y
+  // vuelve a crecer (y con el scroll abajo, el encabezado se agranda y se achica): se ve como un salto o una vibración.
+  function conservarAlto(cont) {
+    const alto = cont.offsetHeight;
+    if (alto) cont.style.minHeight = alto + 'px';
+    return () => requestAnimationFrame(() => { cont.style.minHeight = ''; });
+  }
   async function grilla(cont, w, alCambiar) {
+    const soltar = conservarAlto(cont);
+    try { await armarGrilla(cont, w, alCambiar); } finally { soltar(); }
+  }
+  async function armarGrilla(cont, w, alCambiar) {
     const g = w.grilla;
     const e = w.e;
     const info = w.tablas.find(t => t.tabla === w.tabla);
@@ -2011,6 +2138,7 @@
     };
     const filtroDeValores = async (c, cuerpo, pie, reubicar) => {
       const actual = g.filtros[c];
+      const esFecha = pagina.tipos[pagina.columnas.indexOf(c)] === 'fecha';
       const marcadoAntes = v => Array.isArray(actual) ? actual.includes(v) : actual && actual.excluir ? !actual.excluir.includes(v) : true;
       const buscar = el('input', { type: 'search', class: 'entrada-texto', placeholder: 'Buscar un valor…', 'aria-label': 'Buscar un valor' });
       const todas = el('input', { type: 'checkbox', 'aria-label': 'Seleccionar todo' });
@@ -2027,7 +2155,7 @@
         limpiar(lista);
         for (const x of valores) {
           lista.appendChild(el('label', { class: 'casilla' }, el('input', { type: 'checkbox', checked: marcados.has(x.valor), onchange: ev => { if (ev.target.checked) marcados.add(x.valor); else marcados.delete(x.valor); sincronizar(); } }),
-            el('span', { class: 'pf-valor', title: x.valor }, x.valor === '' ? '(vacías)' : x.valor), el('span', { class: 'muted pf-cantidad' }, n(x.cantidad))));
+            el('span', { class: 'pf-valor', title: x.valor }, x.valor === '' ? '(vacías)' : esFecha ? fechaCorta(x.valor) : x.valor), el('span', { class: 'muted pf-cantidad' }, n(x.cantidad))));
         }
         if (!valores.length) lista.appendChild(el('p', { class: 'muted pf-ayuda', style: 'padding:6px 0' }, 'Ningún valor coincide.'));
         nota.textContent = completo ? '' : `Se muestran los primeros ${n(valores.length)} valores: escribí para buscar el que necesitás.`;
@@ -2056,7 +2184,13 @@
         const buscando = !!buscar.value.trim();
         let nuevo = null;
         // Con la lista completa (o una búsqueda) quedan los marcados; si la lista vino cortada, se excluyen los desmarcados.
-        if (buscando || completo) nuevo = !buscando && elegidos.length === vistos.length ? null : elegidos;
+        if (buscando) nuevo = elegidos;
+        else if (completo) {
+          // Va la lista más corta: los tildados, o los destildados como exclusión (con miles de valores tildados, la
+          // dirección del pedido quedaba tan larga que se rechazaba).
+          const excluidos = vistos.filter(v => !marcados.has(v));
+          nuevo = !excluidos.length ? null : excluidos.length < elegidos.length ? { excluir: excluidos } : elegidos;
+        }
         else { const excluir = vistos.filter(v => !marcados.has(v)); nuevo = excluir.length ? { excluir } : null; }
         if (Array.isArray(nuevo) && !nuevo.length) { aviso('Marcá al menos un valor.', 'atencion'); return; }
         delete g.condiciones[c];
@@ -2072,13 +2206,14 @@
     const abrirFiltro = async (c, ancla) => {
       if (popoverFiltro && popoverFiltro.dataset.columna === c) { cerrarPopoverFiltro(); return; }
       const num = pagina.tipos[pagina.columnas.indexOf(c)] === 'numero';
+      const fecha = pagina.tipos[pagina.columnas.indexOf(c)] === 'fecha';
       const ordenar = desc => { g.orden = c; g.desc = desc; g.desde = 0; cerrarPopoverFiltro(); cargar(); };
       const cuerpo = el('div', { class: 'pf-cuerpo' });
       const pieFiltro = el('div', { class: 'pf-pie' });
       const { reubicar } = abrirPopoverFiltro(ancla, [
         el('div', { class: 'pf-titulo' }, icono('i-filtro'), el('b', null, c)),
-        el('div', { class: 'pf-orden' }, btn(num ? 'Menor a mayor' : 'De la A a la Z', () => ordenar(false), 'fantasma chico', { icono: 'i-arriba' }),
-          btn(num ? 'Mayor a menor' : 'De la Z a la A', () => ordenar(true), 'fantasma chico', { icono: 'i-abajo' })),
+        el('div', { class: 'pf-orden' }, btn(num ? 'Menor a mayor' : fecha ? 'Más antigua primero' : 'De la A a la Z', () => ordenar(false), 'fantasma chico', { icono: 'i-arriba' }),
+          btn(num ? 'Mayor a menor' : fecha ? 'Más reciente primero' : 'De la Z a la A', () => ordenar(true), 'fantasma chico', { icono: 'i-abajo' })),
         cuerpo, pieFiltro], c);
       if (num) { filtroDeNumero(c, cuerpo, pieFiltro); reubicar(); } else await filtroDeValores(c, cuerpo, pieFiltro, reubicar);
     };
@@ -2135,7 +2270,7 @@
           const v = f.valores[i];
           const nombre = pagina.columnas[i];
           const num = pagina.tipos[i] === 'numero';
-          const contenido = (nombre === 'Resultado' || nombre === 'Estado') && v ? celdaResultado(v) : num ? numeroLegible(v) : v;
+          const contenido = (nombre === 'Resultado' || nombre === 'Estado') && v ? celdaResultado(v) : num ? numeroLegible(v) : pagina.tipos[i] === 'fecha' ? fechaCorta(v) : v;
           tr.appendChild(el('td', { class: (num ? 'num' : '') + (f._marcas.includes(nombre) ? ' resaltada' : ''), title: v && v.length > 36 ? v : null }, contenido));
         }
         if (!revisable) { tr.style.cursor = 'default'; cuerpo.appendChild(tr); continue; }
@@ -2348,7 +2483,7 @@
           try { await api('DELETE', `/api/ejecuciones/${encodeURIComponent(x.id)}?forzar=1`); aviso('Versión borrada.', 'ok'); if (alBorrar) alBorrar(x); else enrutar(); } catch (err) { avisarError(err); }
         } }];
       const fila = el('tr', null,
-        el('td', null, el('a', { class: 'celda-reporte', href: '#/ejecucion/' + encodeURIComponent(x.id), style: 'color:inherit;text-decoration:none' }, tileReporte(r), el('b', null, r.nombre))),
+        el('td', null, el('a', { class: 'celda-reporte', href: '#/ejecucion/' + encodeURIComponent(x.id), style: 'color:inherit;text-decoration:none' }, tileReporte(r), el('b', null, r.nombre), chipVariante(varianteDe(r, x), 'chico'))),
         mostrarCierre ? el('td', null, periodos[x.cierreId] ? periodoLargo(periodos[x.cierreId]) : el('span', { class: 'muted' }, 'Facturas')) : null,
         el('td', null, el('span', { class: 'chip borde' }, `Versión ${x.version}`), x.final ? el('span', { class: 'chip acento', style: 'margin-left:6px' }, icono('i-bandera'), 'Final') : null),
         el('td', null, fechaCorta(x.fin || x.inicio || x.creado)),
@@ -2367,19 +2502,24 @@
     const [ejecuciones, cierres, app] = await Promise.all([api('GET', '/api/ejecuciones'), api('GET', '/api/cierres'), api('GET', '/api/estado')]);
     if (!vigente(sello)) return;
     estado.app = app;
-    const main = limpiar($('#vista'));
+    const main = pantallaNueva();
     const periodos = Object.fromEntries(cierres.map(c => [c.id, c.periodo]));
-    const filtro = { cierre: partes[1] || '', reporte: partes[2] || '', estado: '' };
+    const filtro = { cierre: partes[1] || '', reporte: partes[2] || '', estado: '', variante: partes[3] || '' };
+    const nombresReporte = Object.fromEntries(app.reportes.map(r => [r.codigo, r]));
+    const fondos = app.reportes.flatMap(r => r.variantes ? r.variantes.opciones : []);
     main.appendChild(el('div', { class: 'encabezado entrar' }, el('div', null, el('h1', null, 'Historial'), el('div', { class: 'sub' }, 'Todas las corridas, de todos los cierres. Las versiones viejas se pueden borrar desde el menú de cada fila.'))));
     const selCierre = el('select', { class: 'selector', 'aria-label': 'Cierre', onchange: ev => { filtro.cierre = ev.target.value; pintar(); } }, el('option', { value: '', text: 'Todos los cierres' }), cierres.map(c => el('option', { value: c.id, text: periodoLargo(c.periodo), selected: filtro.cierre === c.id })));
     const selReporte = el('select', { class: 'selector', 'aria-label': 'Reporte', onchange: ev => { filtro.reporte = ev.target.value; pintar(); } }, el('option', { value: '', text: 'Todos los reportes' }), app.reportes.map(r => el('option', { value: r.codigo, text: r.nombre, selected: filtro.reporte === r.codigo })));
     const selEstado = el('select', { class: 'selector', 'aria-label': 'Estado', onchange: ev => { filtro.estado = ev.target.value; pintar(); } }, el('option', { value: '', text: 'Cualquier estado' }), Object.entries(ESTADO_TEXTO).map(([v, t]) => el('option', { value: v, text: t })));
-    main.appendChild(el('div', { class: 'barra-grilla entrar' }, icono('i-filtro'), selCierre, selReporte, selEstado));
+    const selFondo = fondos.length ? el('select', { class: 'selector', 'aria-label': 'Fondo de riesgo', onchange: ev => { filtro.variante = ev.target.value; pintar(); } },
+      el('option', { value: '', text: 'Cualquier fondo' }), fondos.map(o => el('option', { value: o.valor, text: o.titulo, selected: filtro.variante === o.valor }))) : null;
+    main.appendChild(el('div', { class: 'barra-grilla entrar' }, icono('i-filtro'), selCierre, selReporte, selFondo, selEstado));
     const marco = el('div');
     main.appendChild(marco);
     const pintar = () => {
       limpiar(marco);
-      const lista = ejecuciones.filter(x => (!filtro.cierre || x.cierreId === filtro.cierre) && (!filtro.reporte || x.reporte === filtro.reporte) && (!filtro.estado || x.estado === filtro.estado));
+      const lista = ejecuciones.filter(x => (!filtro.cierre || x.cierreId === filtro.cierre) && (!filtro.reporte || x.reporte === filtro.reporte) && (!filtro.estado || x.estado === filtro.estado)
+        && (!filtro.variante || (varianteDe(nombresReporte[x.reporte], x) || {}).valor === filtro.variante));
       if (!lista.length) { marco.appendChild(el('div', { class: 'vacio' }, el('div', { class: 'ilustracion' }, icono('i-historial')), el('h2', null, ejecuciones.length ? 'No hay corridas con ese filtro' : 'Todavía no hay corridas'), el('p', null, 'Cada vez que corras un reporte, la versión va a quedar registrada acá.'))); return; }
       marco.appendChild(tablaEjecuciones(lista, { periodos, alBorrar: x => { ejecuciones.splice(ejecuciones.indexOf(x), 1); pintar(); } }));
     };
@@ -2431,9 +2571,12 @@
         }, '', { icono: 'i-basura' })],
       ['acceso', 'i-pc', 'Acceso directo', 'La herramienta crea sola el acceso directo "Reportes de cierre" la primera vez que se abre. Si lo borraste, volvé a crearlo acá.',
         btn('Crear el acceso directo en el Escritorio', async () => { try { await api('POST', '/api/acceso-directo', {}); aviso('Listo: en el Escritorio está el acceso directo "Reportes de cierre".', 'ok'); } catch (err) { avisarError(err); } }, '', { icono: 'i-pc' })],
-      ['herramienta', 'i-info', 'La herramienta', `Versión ${app.version}.`, el('div', { class: 'acciones-fila' },
+      ['herramienta', 'i-info', 'La herramienta', `Versión ${app.version}. Si algo falla o se cierra sola, tocá "Reportar un problema": baja un archivo para mandarle a quien te da soporte.`, el('div', { class: 'acciones-fila' },
         btn('Ver la guía de inicio', () => { cerrarVentana(); bienvenida(); }, '', { icono: 'i-chispa' }),
         btn('Reiniciar la herramienta', () => { cerrarVentana(); reiniciarHerramienta(); }, '', { icono: 'i-refrescar' }),
+        btn('Reportar un problema', () => descargar('/api/registro', 'Reporte del problema', 'Juntando el registro de la herramienta…').catch(avisarError), '', {
+          icono: 'i-mensaje',
+          title: 'Baja un archivo con lo que pasó en la herramienta (cuándo se abrió y se cerró, y los errores). Mandáselo a quien te da soporte junto con lo que estabas haciendo.' }),
         btn('Cerrar la herramienta', () => { cerrarVentana(); cerrarHerramienta(); }, 'peligro', { icono: 'i-apagar' }))],
     ];
     const indice = el('nav', { class: 'config-indice', 'aria-label': 'Secciones de la configuración' });
@@ -2456,7 +2599,7 @@
   async function reiniciarHerramienta() {
     if (!await confirmar('¿Reiniciar la herramienta?', 'Se cierra y se vuelve a abrir sola en unos segundos, con lo último que se haya instalado. Lo que tenés guardado no se pierde.', 'Reiniciar', 'pregunta')) return;
     let anterior = null;
-    try { anterior = (await api('GET', '/api/estado', undefined, { silencioso: true })).instancia; await api('POST', '/api/reiniciar', {}); } catch (err) { avisarError(err); return; }
+    try { anterior = (await api('GET', '/api/estado', undefined, { silencioso: true })).instancia; estado.saliendo = true; await api('POST', '/api/reiniciar', {}); } catch (err) { avisarError(err); return; }
     if (estado.fuente) { estado.fuente.close(); estado.fuente = null; }
     const texto = el('span', null, 'Esperando que vuelva a abrir…');
     abrirModal({ titulo: 'Reiniciando la herramienta', iconoNombre: 'i-refrescar', cuerpo: el('p', { class: 'cargando-texto' }, el('span', { class: 'girador' }), texto) });
@@ -2468,11 +2611,13 @@
         if (r.ok && (await r.json()).instancia !== anterior) { location.reload(); return; }
       } catch (err) { /* todavía no volvió */ }
     }
+    estado.saliendo = false;
     texto.textContent = 'No volvió a abrirse sola. Abrila desde el acceso directo "Reportes de cierre".';
   }
   async function cerrarHerramienta() {
-    if (!await confirmar('¿Cerrar la herramienta?', 'Para volver a abrirla, usá el acceso directo "Reportes de cierre". Igual se apaga sola después de tres horas sin uso.', 'Cerrar', 'aviso')) return;
+    if (!await confirmar('¿Cerrar la herramienta?', 'Para volver a abrirla, usá el acceso directo "Reportes de cierre". Si cerrás la pestaña sin cerrarla, se apaga sola tres horas después.', 'Cerrar', 'aviso')) return;
     try {
+      estado.saliendo = true;
       await api('POST', '/api/cerrar', {});
       if (estado.fuente) { estado.fuente.close(); estado.fuente = null; }
       for (const d of document.querySelectorAll('dialog[open]')) d.close();
@@ -2508,7 +2653,6 @@
     ev.stopPropagation();
     abrirMenu($('#btn-menu'), [
       { icono: 'i-ajustes', texto: 'Configuración', onclick: () => abrirConfiguracion().catch(avisarError) },
-      { icono: 'i-historial', texto: 'Historial', onclick: () => { location.hash = '#/historial'; } },
       'sep',
       { icono: 'i-refrescar', texto: 'Reiniciar la herramienta', detalle: 'Se cierra y vuelve a abrir sola', onclick: reiniciarHerramienta },
       { icono: 'i-apagar', texto: 'Cerrar la herramienta', peligro: true, onclick: cerrarHerramienta },

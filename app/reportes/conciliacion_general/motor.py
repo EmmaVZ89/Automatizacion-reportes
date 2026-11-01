@@ -16,10 +16,11 @@ from zipfile import ZipFile, BadZipFile
 from xml.etree import ElementTree as ET
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation, getcontext
 from collections import defaultdict, Counter
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import csv, hashlib, json, re, sqlite3, itertools
 
 from .._comun import protocolo
+from .._comun.detectores import PREFIJOS_FONDO
 from .excel import export_excel, label
 
 NS = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
@@ -29,7 +30,9 @@ CENT = Decimal('.01')
 # Los libros guardados por Excel pueden contener residuos de precisión binaria
 # con muchos decimales. Mantenerlos hasta sumar, sin redondear las filas.
 getcontext().prec = 80
-HEAD = ['Tipo', 'Cliente', 'Comprobante', 'CUIT', 'Razon social', 'Saldo SGA',
+# Fecha SGA y Fecha ERP (pedido de quien usa el reporte, 01/11/2026): la fecha del comprobante en cada sistema, a la
+# izquierda de Comprobante. Sólo informan: no intervienen en el cruce ni en los saldos.
+HEAD = ['Tipo', 'Cliente', 'Fecha SGA', 'Fecha ERP', 'Comprobante', 'CUIT', 'Razon social', 'Saldo SGA',
         'Saldo ERP', 'Diferencia SGA menos ERP', 'Resultado', 'Filas SGA',
         'Filas ERP', 'Origen SGA (primeras 5)', 'Origen ERP (primeras 5)',
         'Estado revision', 'Observaciones']
@@ -57,6 +60,20 @@ def rounded(n):
 
 def text(v):
     return str(v or '').strip()
+
+def fecha_iso(v):
+    """Fecha de una celda (número de serie de Excel, o texto dd/mm/aaaa o aaaa-mm-dd) como aaaa-mm-dd; '' si no hay."""
+    v=text(v)
+    if not v:return ''
+    try:
+        n=float(v)
+        if 1<=n<2958466:return (date(1899,12,30)+timedelta(days=int(n))).isoformat()
+        return ''
+    except ValueError:pass
+    m=re.match(r'^(\d{4})-(\d{2})-(\d{2})',v)
+    if m:return m.group(0)
+    m=re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})',v)
+    return f'{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}' if m else ''
 
 def cell_text(c, strings):
     t = c.get('t'); v = c.find(NS+'v')
@@ -218,8 +235,9 @@ def run(entradas, salida, alcance, corte=None, fondo=FUND, informar=protocolo):
     if traza.exists():traza.unlink()
     db=sqlite3.connect(traza)
     try:
-        db.execute('CREATE TABLE filas(sistema TEXT,categoria TEXT,tipo TEXT,cliente TEXT,comprobante TEXT,importe TEXT,archivo TEXT,fila INTEGER,cuit TEXT,razon TEXT,factura TEXT,subrecibo TEXT,recibo_global TEXT,asiento TEXT,grupo TEXT)')
-        stats=Counter();totals=defaultdict(Decimal);manifest=[];issues=[];special=[];type_sources={}
+        db.execute('CREATE TABLE filas(sistema TEXT,categoria TEXT,tipo TEXT,cliente TEXT,comprobante TEXT,importe TEXT,archivo TEXT,fila INTEGER,cuit TEXT,razon TEXT,factura TEXT,subrecibo TEXT,recibo_global TEXT,asiento TEXT,grupo TEXT,fecha TEXT)')
+        stats=Counter();totals=defaultdict(Decimal);manifest=[];issues=[];special=[];type_sources={};fondos_erp=Counter()
+        informar.log('Fondo de riesgo: '+fondo)
         for i,(side,spec,p,digest) in enumerate(paths):
             informar.paso('Leyendo '+side+' '+spec.get('reporte','')+' '+p.name)
             informar.progreso(i/(len(paths)+1),p.name)
@@ -264,8 +282,12 @@ def run(entradas, salida, alcance, corte=None, fondo=FUND, informar=protocolo):
                 else:
                     fact=g('Factura');sr=g('Número de recibo');rc=g('Número de Recibo global');seat=g('Asiento');group='';cuit='';razon=''
                     tx=g('Tipo de transacción');types[tx]+=1
-                    if tx.casefold() not in ('cliente','pago','diario general'):
+                    # Liquidación: la traen los ERP de FERF Prov. Santa Fe; lleva número de factura y se cruza como las de
+                    # tipo Cliente (decisión del 01/11/2026).
+                    if tx.casefold() not in ('cliente','pago','diario general','liquidación'):
                         raise ValueError(f'{origin}, fila {n}: tipo de transacción vacío o no reconocido: {tx!r}')
+                    for prefijo,f in PREFIJOS_FONDO:
+                        if seat.startswith(prefijo):fondos_erp[f]+=1
                     # Varios archivos con el mismo tipo son tramos de una misma descarga: se concatenan y se avisa.
                     owners=type_sources.setdefault(tx.casefold(),(tx,[]))[1]
                     if p.name not in owners:owners.append(p.name)
@@ -287,32 +309,48 @@ def run(entradas, salida, alcance, corte=None, fondo=FUND, informar=protocolo):
                         kind='NC';doc=imp
                     elif imp.startswith('REH'):
                         kind='REH';doc=imp
-                batch.append((side,category,kind,client,doc,str(amount),origin,n,cuit,razon,fact,sr,rc,seat,group))
+                # Fecha del comprobante de la fila (criterio de quien usa el reporte, 01/11/2026): en SGA prioriza
+                # FechaFactura, salvo que el comprobante sea de imputación (subrecibo, recibo, pendiente, NC imputada):
+                # FechaComprobanteImputacion. En ERP, sólo Fecha.
+                if side=='SGA':
+                    if doc and doc!=fact and doc in (imp,sr):fecha=fecha_iso(g('FechaComprobanteImputacion'))
+                    else:fecha=fecha_iso(g('FechaFactura'))
+                else:fecha=fecha_iso(g('Fecha'))
+                batch.append((side,category,kind,client,doc,str(amount),origin,n,cuit,razon,fact,sr,rc,seat,group,fecha))
                 stats[side+'_'+category]+=1;totals[side+'_'+category]+=amount;totals[side]+=amount;subtotal+=amount
                 if len(batch)>=5000:
-                    db.executemany('INSERT INTO filas VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',batch);batch.clear()
+                    db.executemany('INSERT INTO filas VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',batch);batch.clear()
                 if included%100000==0:informar.log('  '+str(included)+' filas procesadas')
-            if batch:db.executemany('INSERT INTO filas VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',batch)
+            if batch:db.executemany('INSERT INTO filas VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',batch)
             db.commit()
             manifest.append({'sistema':side,'reporte':spec.get('reporte','Historico'),'archivo':p.name,'hoja':spec['hoja'],'sha256':digest,'filas_archivo':count,'filas_incluidas':included,'total_exacto':str(subtotal),'integridad':'NO CONFIRMADA' if side=='ERP' else 'SEGUN ARCHIVO RECIBIDO','fecha_descarga':spec.get('fecha_descarga','NO INFORMADA'),'tipos':dict(types)})
             if side=='ERP' and count==450000:issues.append([side,p.name,'','','','Alerta: exactamente 450000 filas. Posible descarga recortada',''])
         for tx,owners in type_sources.values():
             if len(owners)>1:issues.append(['ERP','','','',tx,'Tramos del mismo tipo de transacción: '+', '.join(owners)+'. Verificar que sean partes de una misma descarga',''])
+        # El ERP tiene que ser del fondo de la corrida. No trae una columna de fondo: se reconoce por sus asientos.
+        if len(fondos_erp)>1:
+            raise ValueError('Las transacciones del ERP mezclan los dos fondos (asientos "Ventas-" del Fondo de Riesgo General y "SaFe" de FERF Prov. Santa Fe). Elegí sólo los archivos del fondo de esta corrida.')
+        if fondos_erp and fondo not in fondos_erp:
+            otro=next(iter(fondos_erp))
+            raise ValueError(f'Las transacciones del ERP son de {otro} y esta corrida es de {fondo}. Elegí el ERP de {fondo}, o corré la conciliación de {otro}.')
+        if not any(m['sistema']=='SGA' and m['filas_incluidas'] for m in manifest):
+            raise ValueError(f'El histórico de SGA no tiene movimientos de {fondo}.')
         informar.paso('Preparando conciliación general de todos los movimientos...')
         informar.progreso(len(paths)/(len(paths)+1),'Conciliando')
         db.execute('CREATE INDEX ix_clave ON filas(sistema,tipo,cliente,comprobante)');db.commit()
         def aggregates(side):
-            cur=db.execute('SELECT tipo,cliente,comprobante,importe,archivo,fila,cuit,razon,categoria,subrecibo,recibo_global FROM filas WHERE sistema=? ORDER BY tipo,cliente,comprobante',(side,))
+            cur=db.execute('SELECT tipo,cliente,comprobante,importe,archivo,fila,cuit,razon,categoria,subrecibo,recibo_global,fecha FROM filas WHERE sistema=? ORDER BY tipo,cliente,comprobante',(side,))
             for key,rows in itertools.groupby(cur,lambda r:r[:3]):
-                amount=ZERO;count=0;refs=[];cuit='';razon='';categories=set();aliases=set();principales=set()
+                amount=ZERO;count=0;refs=[];cuit='';razon='';categories=set();aliases=set();principales=set();fecha=''
                 for r in rows:
                     amount+=Decimal(r[3]);count+=1
                     if len(refs)<5:refs.append(f'{r[4]}:{r[5]}')
                     cuit=cuit or r[6];razon=razon or r[7];categories.add(r[8])
                     if r[9]:aliases.add(r[9])
                     if r[10]:aliases.add(r[10]);principales.add(r[10])
+                    if r[11] and (not fecha or r[11]<fecha):fecha=r[11]  # la primera: la emisión del comprobante
                 # Se retiene el saldo exacto para el control independiente de cobertura.
-                yield key,(amount,count,' | '.join(refs),cuit,razon,categories,aliases,principales)
+                yield key,(amount,count,' | '.join(refs),cuit,razon,categories,aliases,principales,fecha)
         sga=dict(aggregates('SGA'));erp=dict(aggregates('ERP'))
         counts=Counter();display_totals=defaultdict(Decimal);exact_totals=defaultdict(Decimal);included_rows=Counter()
         general_path=backup/'Conciliacion_general.csv'
@@ -356,8 +394,8 @@ def run(entradas, salida, alcance, corte=None, fondo=FUND, informar=protocolo):
                     exact_totals[side]+=a[0];display_totals[side]+=rounded(a[0]);included_rows[side]+=a[1];aliases.update(a[6])
             status=label(status)
             counts[status]+=1
-            row=[tipo,client,doc,(sa or ea)[3],(sa or ea)[4],money(sv) if sv is not None else '',money(ev) if ev is not None else '',money(delta) if delta is not None else '',status,sa[1] if sa else 0,ea[1] if ea else 0,sa[2] if sa else '',ea[2] if ea else '', '', ' '.join(notes),fondo,' | '.join(sorted(aliases))]
-            full.writerow([safe(v) if i not in (5,6,7) else v for i,v in enumerate(row)])
+            row=[tipo,client,sa[8] if sa else '',ea[8] if ea else '',doc,(sa or ea)[3],(sa or ea)[4],money(sv) if sv is not None else '',money(ev) if ev is not None else '',money(delta) if delta is not None else '',status,sa[1] if sa else 0,ea[1] if ea else 0,sa[2] if sa else '',ea[2] if ea else '', '', ' '.join(notes),fondo,' | '.join(sorted(aliases))]
+            full.writerow([safe(v) if i not in (7,8,9) else v for i,v in enumerate(row)])
         controls={}
         for side in ('SGA','ERP'):
             source_count=db.execute('SELECT COUNT(*) FROM filas WHERE sistema=?',(side,)).fetchone()[0]
@@ -368,8 +406,8 @@ def run(entradas, salida, alcance, corte=None, fondo=FUND, informar=protocolo):
         if missing_types:issues.append(['ERP','','','','','Sin filas de estos tipos: '+', '.join(missing_types)+'. Verificar cobertura.',''])
         if stats['ERP_filas_saldo2_cero']:issues.append(['ERP','','','','','Modo abiertos: filas con Saldo2 cero: '+str(stats['ERP_filas_saldo2_cero'])+'. Se conservaron; revisar filtro y divisas.',''])
         def footer(label,saldo_sga='',saldo_erp='',difference='',result='',detail=''):
-            row=['']*len(headers);row[0]='CONTROL';row[2]=label;row[5]=saldo_sga;row[6]=saldo_erp;row[7]=difference;row[8]=result;row[14]=detail;row[15]=fondo
-            full.writerow([safe(v) if i not in (5,6,7) else v for i,v in enumerate(row)])
+            row=['']*len(headers);row[0]='CONTROL';row[4]=label;row[7]=saldo_sga;row[8]=saldo_erp;row[9]=difference;row[10]=result;row[16]=detail;row[17]=fondo
+            full.writerow([safe(v) if i not in (7,8,9) else v for i,v in enumerate(row)])
         # Los controles están al final y se distinguen por Tipo=CONTROL. No son
         # comprobantes y no deben sumarse otra vez con las filas de datos.
         footer('TOTAL GENERAL POR COMPROBANTE',money(display_totals['SGA']),money(display_totals['ERP']),money(display_totals['SGA']-display_totals['ERP']),'TOTAL INFORMATIVO','Suma del detalle de Conciliación general. Estos totales se muestran solo en Resumen. No certifica integridad ni resuelve ausentes.')

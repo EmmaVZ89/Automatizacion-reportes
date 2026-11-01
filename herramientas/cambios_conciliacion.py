@@ -26,9 +26,16 @@ NOTA_MP_OTRO_LEGADO = 'Incluye movimiento pendiente identificado por comprobante
 SIN_IDENTIFICAR = ('SIN COMPROBANTE EN SGA', 'REVISAR IDENTIFICACION')
 
 
-def leer_csv(ruta):
+COLUMNAS_NUEVAS = ('Fecha SGA', 'Fecha ERP')  # informativas, desde el 01/11/2026: el legado no las tiene
+
+
+def leer_csv(ruta, con_nuevas=False):
     with Path(ruta).open(encoding='utf-8-sig', newline='') as f:
         filas = list(csv.DictReader(f, delimiter=';'))
+    if not con_nuevas:  # para comparar con el legado
+        for r in filas:
+            for c in COLUMNAS_NUEVAS:
+                r.pop(c, None)
     return [r for r in filas if r['Tipo'] != 'CONTROL'], [r for r in filas if r['Tipo'] == 'CONTROL']
 
 
@@ -194,7 +201,7 @@ def explicar_resumen(json_legado, json_nuevo, cantidad_pendientes, datos_nuevos=
 def xlsx_consistente(xlsx_nuevo, csv_nuevo):
     """La hoja de detalle del Excel nuevo tiene exactamente las filas de datos del CSV nuevo."""
     import openpyxl
-    datos, _ = leer_csv(csv_nuevo)
+    datos, _ = leer_csv(csv_nuevo, con_nuevas=True)
     libro = openpyxl.load_workbook(xlsx_nuevo, read_only=True)
     errores = []
     try:
@@ -214,6 +221,8 @@ def xlsx_consistente(xlsx_nuevo, csv_nuevo):
                 esperado = c[col]
                 if col in numericas and esperado != '':
                     ok = v is not None and Decimal(str(v)) == Decimal(esperado)
+                elif col in COLUMNAS_NUEVAS and hasattr(v, 'date'):
+                    ok = v.date().isoformat() == esperado  # en el Excel son fechas reales
                 else:
                     ok = ('' if v is None else str(v)) == esperado
                 if not ok:

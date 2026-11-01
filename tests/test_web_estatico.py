@@ -75,6 +75,25 @@ class WebEstaticaTests(unittest.TestCase):
             for palabra in JERGA:
                 self.assertNotIn(palabra, c.lower(), f'jerga en: {c}')
 
+    def test_las_animaciones_no_dependen_de_reducir_movimiento(self):
+        # Decisión del dueño del repositorio: las animaciones van siempre, aunque Windows o el navegador tengan
+        # "reducir movimiento" activado.
+        for texto in (self.css, self.js, self.html):
+            self.assertNotIn('prefers-reduced-motion', texto)
+            self.assertNotRegex(texto, r'matchMedia\([^)]*reduce')
+
+    def test_sin_saltos_al_cambiar_de_contenido(self):
+        # La barra de desplazamiento siempre reservada (si aparece o desaparece, nada se corre a los costados), la
+        # grilla con alto fijo, los desplegables animados y la tabla elegida sin negrita (la negrita ensancha el texto).
+        self.assertRegex(self.css, r'html\s*\{[^}]*scrollbar-gutter:\s*stable')
+        self.assertRegex(self.css, r'\.marco-grilla\s*\{\s*height:')
+        self.assertIn('details::details-content', self.css)
+        activa = re.search(r'\.lista-tablas button\.activa\s*\{([^}]*)\}', self.css).group(1)
+        self.assertNotIn('font-weight', activa)
+        # la grilla conserva su alto mientras arma la tabla nueva; la vista toma su ancho junto con el contenido nuevo
+        self.assertIn('const soltar = conservarAlto(cont);', self.js)
+        self.assertNotIn("$('#vista').classList.toggle('ancha'", self.js)
+
 
 if __name__ == '__main__':
     unittest.main()

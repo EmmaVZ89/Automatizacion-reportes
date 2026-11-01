@@ -50,6 +50,15 @@ Diseño: `docs/superpowers/specs/2026-10-31-herramienta-cierre-design.md`. Plan:
   `conciliacion_general/origen.py` y `controles_sga/origen.py`). `filas_de` puede devolver, por fila, las columnas a
   pintar de anaranjado (`Tablas.fila` trae `_marcas`, las observadas en pantalla). La limpieza borra las copias con
   su archivo.
+- Variantes de un reporte (`REPORTE['variantes'] = {parametro, opciones: [{valor, titulo, corto}]}`; hoy, el fondo de
+  riesgo de la conciliación): cada variante es una serie aparte (versión, resultado final, `version_anterior`,
+  traer del cierre anterior) por `Dominio.variante_de(e)` (las ejecuciones de antes la toman de sus parámetros).
+  `crear_ejecucion(..., variante)` arranca los parámetros con ella; cambiar el parámetro en un borrador pasa la versión
+  a la otra serie. `_resumen_cierre` agrega `reportes[codigo].variantes[valor]`; la pantalla arma un ítem por variante
+  (`itemsCierre`) y muestra el chip `chipVariante`. Los ERP guardan `fondo` al reconocerse (`fondo_por_asientos`);
+  Archivos sólo lo muestra y la validación contra el fondo va en Opciones (donde se elige) y en `ejecutar`.
+- `Origenes`: no llamar a `estado()` con `_lock` tomado (trababa la herramienta entera: `/api/estado` y la copia en
+  curso quedaban esperando). El candado es reentrante como resguardo.
 - `app/catalogo.py`: carga `app/reportes/*/reporte.py` (entradas con detector, parámetros con default, salidas con
   clave de revisión, `orden`, `requiere`). En cada salida, además: `revisar` ({columna, salvo}: las filas con esos
 valores no cuentan como pendientes; `Tablas` recibe estas reglas desde `Dominio.tablas` y `REVISION_V` recuenta las
@@ -74,8 +83,20 @@ en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_tria
   `descargar(ruta, titulo)`; los reportes y el Excel de origen llegan por los eventos `trabajo` y `origen`). Un `btn()`
   cuya acción devuelve una promesa se marca solo como ocupado. Los redibujos que llegan por eventos van con
   `enSilencio()` (sin animaciones de entrada). Las clases de tono de los diálogos llevan prefijo (`tono-aviso`): no
-  reusar nombres de clase de otros componentes (`.aviso` es la notificación). Si el código de `app/` cambia con la
-  herramienta abierta, `/api/estado` devuelve `reiniciar` y la pantalla lo avisa con "Reiniciar la herramienta"
+  reusar nombres de clase de otros componentes (`.aviso` es la notificación). Sin saltos de maquetado: un bloque que se
+  vuelve a armar con datos que llegan después conserva su alto (`conservarAlto`, lo usa `grilla`); la vista toma su
+  ancho al pintarse (`pantallaNueva`), no al cambiar la dirección; `html` reserva la barra de desplazamiento; la grilla
+  tiene alto fijo; los estados elegidos no cambian el grosor de letra; los `<details>` se animan con
+  `::details-content`. Para medir, el patrón es un PerformanceObserver de `layout-shift` en Playwright
+  (`tests/test_web_estatico.py` fija los arreglos). Si el código de `app/` cambia con la
+  herramienta abierta, `/api/estado` devuelve `reiniciar` y la pantalla lo avisa. Inactividad: `_vigilar_inactividad`
+  cuenta como uso una pestaña conectada a `/api/eventos` (`bus.suscriptores`) y una copia de origen en curso; sólo
+  apaga sin pestañas. Si la pantalla pierde la conexión (`revisarConexion`: error del canal de eventos, un pedido que no
+  llega o un 403 de sesión vieja) muestra `#banda-conexion` e interrumpe las tareas de reportes y copias; al volver
+  (`reconectada`) las pone al día. Registro (`datos/servidor.log`, rotado): apertura con versión y pid, cierre con
+  `motivo_cierre`, sesión anterior sin cerrar (quedó `.servidor.json`), errores sin atrapar (`arranque.registrar_fallas`,
+  sólo en `python -m app.arranque`) y caídas del intérprete en `fallas.log` (faulthandler); `GET /api/registro` los
+  baja juntos. El aviso de versión nueva ofrece "Reiniciar la herramienta"
   (también en el menú): `POST /api/reiniciar` → `Servidor.reiniciar` lanza `python -m app.arranque --reinicio TOKEN`
   con el mismo token y puerto y se cierra; la instancia nueva espera a que se suelte el puerto, y la pantalla espera
   a que `/api/estado` devuelva otra `instancia` y recarga. En Windows el puerto es exclusivo (`_ServidorHttp`). Las

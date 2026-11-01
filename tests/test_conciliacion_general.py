@@ -93,6 +93,20 @@ def leer_csv(path):
         return list(csv.DictReader(f, delimiter=';'))
 
 
+FECHAS = ('Fecha SGA', 'Fecha ERP')  # columnas informativas nuevas (01/11/2026): los dorados son de antes
+
+
+def sin_fechas(filas):
+    """Filas (con encabezado) sin las columnas de fecha, para comparar con los dorados."""
+    quitar = {i for i, c in enumerate(filas[0]) if c in FECHAS}
+    return [[v for i, v in enumerate(r) if i not in quitar] for r in filas]
+
+
+def filas_csv(path):
+    with Path(path).open(encoding='utf-8-sig', newline='') as f:
+        return list(csv.reader(f, delimiter=';'))
+
+
 def xlsx_con_error(path, hojas):
     """Libro con una celda de error de Excel (t="e") donde el valor es la cadena '#ERROR'."""
     ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -124,7 +138,8 @@ class DoradosTests(unittest.TestCase):
         dorado = DORADOS / caso
         with carpeta_temporal() as d:
             resumen = correr(entradas, d)
-            self.assertEqual((d / 'Respaldo_tecnico' / 'Conciliacion_general.csv').read_bytes(), (dorado / 'Conciliacion_general.csv').read_bytes())
+            self.assertTrue((d / 'Respaldo_tecnico' / 'Conciliacion_general.csv').read_bytes().startswith(b'\xef\xbb\xbf'))
+            self.assertEqual(sin_fechas(filas_csv(d / 'Respaldo_tecnico' / 'Conciliacion_general.csv')), filas_csv(dorado / 'Conciliacion_general.csv'))
             esperado = json.loads((dorado / 'Resumen.json').read_text(encoding='utf-8'))
             self.assertEqual(normalizar_resumen(resumen), normalizar_resumen(esperado))
             self.assertEqual(normalizar_resumen(json.loads((d / 'Respaldo_tecnico' / 'Resumen.json').read_text(encoding='utf-8'))), normalizar_resumen(esperado))
@@ -132,7 +147,11 @@ class DoradosTests(unittest.TestCase):
             self.assertEqual(list(hojas), ['Resumen', 'Conciliación_general'])
             for nombre, filas in hojas.items():
                 with (dorado / f'xlsx_{nombre}.csv').open(encoding='utf-8', newline='') as f:
-                    self.assertEqual(filas, list(csv.reader(f, delimiter=';')), nombre)
+                    esperado = list(csv.reader(f, delimiter=';'))
+                if FECHAS[0] in filas[0]:
+                    # sin fechas en las entradas, las columnas nuevas quedan vacías: se recortan los vacíos del final
+                    filas = [r[:max([i + 1 for i, v in enumerate(r) if v] or [0])] for r in sin_fechas(filas)]
+                self.assertEqual(filas, esperado, nombre)
             self.assertEqual(sorted(p.name for p in d.iterdir()), ['Conciliacion_general.xlsx', 'Respaldo_tecnico'])
             self.assertTrue((d / 'Respaldo_tecnico' / 'COMPLETADO.txt').exists())
             self.assertTrue((d / 'Respaldo_tecnico' / 'trazabilidad.sqlite').exists())
@@ -285,6 +304,50 @@ class LogicaTests(unittest.TestCase):
             self.assertEqual(sum(Decimal(r['Saldo SGA']) for r in datos if r['Tipo'] != 'CONTROL' and r['Saldo SGA']), Decimal('0.02'))
 
 
+class FechasTests(unittest.TestCase):
+    """Fecha SGA y Fecha ERP (pedido del 01/11/2026): en SGA, FechaFactura salvo que el comprobante sea de imputación
+    (FechaComprobanteImputacion); en ERP, Fecha. Sólo informan: los saldos y resultados no cambian."""
+
+    def test_fecha_del_comprobante_en_cada_sistema(self):
+        import openpyxl
+        s = S + ['FechaFactura', 'FechaComprobanteImputacion']
+        e = E + ['Fecha']
+        sga = [s,
+               [FONDO, '1', 'F1', '100', 'Otros', '', '', '201', 'Socio', '45931', ''],          # factura: FechaFactura
+               [FONDO, '1', 'F1', '-40', 'Otros', '', 'RC-X9', '201', 'Socio', '45931', '45945'],  # su cobro: sigue la factura
+               [FONDO, '2', '', '-10', 'Movimientos Pendientes', 'SR-1', 'RC-X1', '202', 'Otro', '', '45941'],  # imputación
+               [FONDO, '3', 'F3', '30', 'Otros', '', '', '203', 'Tres', '', '']]                  # sin fecha
+        erp = [e,
+               ['60', '1', 'F1', '', '', '', 'Cliente', '45936'],
+               ['-10', '2', '', 'SR-1', 'RC-X1', '', 'Pago', '15/10/2025'],
+               ['5', '4', 'F4', '', '', '', 'Cliente', '2025-10-20']]
+        with carpeta_temporal() as d:
+            entradas = {'sga': [xlsx_sintetico(d / 'sga.xlsx', [('Datos', sga)])], 'erp': [xlsx_sintetico(d / 'erp.xlsx', [('Datos', erp)])]}
+            correr(entradas, d / 'salida')
+            filas = {(r['Tipo'], r['Comprobante']): r for r in leer_csv(d / 'salida' / 'Respaldo_tecnico' / 'Conciliacion_general.csv') if r['Tipo'] != 'CONTROL'}
+            fechas = {k: (r['Fecha SGA'], r['Fecha ERP']) for k, r in filas.items()}
+            self.assertEqual(fechas[('FACTURA', 'F1')], ('2025-10-01', '2025-10-06'))
+            self.assertEqual(fechas[('RC-X', 'SR-1')], ('2025-10-11', '2025-10-15'))
+            self.assertEqual(fechas[('FACTURA', 'F3')], ('', ''))       # sólo en SGA y sin fecha
+            self.assertEqual(fechas[('FACTURA', 'F4')], ('', '2025-10-20'))  # sólo en ERP
+            self.assertEqual(filas[('FACTURA', 'F1')]['Saldo SGA'], '60.00')
+            # en el Excel van como fechas reales, a la izquierda de Comprobante
+            hoja = openpyxl.load_workbook(d / 'salida' / 'Conciliacion_general.xlsx').worksheets[1]  # Conciliación general
+            encabezado = [c.value for c in hoja[1]]
+            self.assertEqual(encabezado[2:5], ['Fecha SGA', 'Fecha ERP', 'Comprobante'])
+            fila_f1 = next(r for r in hoja.iter_rows(min_row=2) if r[4].value == 'F1')
+            self.assertEqual(fila_f1[2].value.date().isoformat(), '2025-10-01')
+            self.assertTrue(fila_f1[2].is_date)
+            # en la grilla, las dos fechas en anaranjado cuando el comprobante está en los dos sistemas con fechas distintas
+            from app.reportes.conciliacion_general import ejecutar
+            from app.tablas import Tablas
+            ejecutar.volcar(d / 'salida', d / 'r.sqlite')
+            pagina = Tablas(d / 'r.sqlite').consultar('general', cantidad=100)
+            marcas = {f['valores'][pagina['columnas'].index('Comprobante')]: f['_marcas'] for f in pagina['filas']}
+            self.assertEqual(marcas['F1'], ['Fecha SGA', 'Fecha ERP'])
+            self.assertEqual(marcas['F4'], [])  # sólo en ERP: nada que comparar
+
+
 class EjecutarTests(unittest.TestCase):
     def test_ejecutar_vuelca_dos_tablas_y_resumen(self):
         e = DORADOS / 'separado' / 'entradas'
@@ -316,11 +379,11 @@ class EjecutarTests(unittest.TestCase):
                 self.assertEqual(con.execute('SELECT COUNT(*) FROM t_general').fetchone()[0], tablas['general'])
                 self.assertEqual(tablas['general'], 8)
                 columnas = [r[0] for r in con.execute("SELECT nombre FROM _columnas WHERE tabla='general' ORDER BY posicion")]
-                self.assertEqual(len(columnas), 17)
-                self.assertEqual(columnas[:3], ['Tipo', 'Cliente', 'Comprobante'])
+                self.assertEqual(len(columnas), 19)
+                self.assertEqual(columnas[:5], ['Tipo', 'Cliente', 'Fecha SGA', 'Fecha ERP', 'Comprobante'])
                 self.assertEqual(con.execute("SELECT COUNT(*) FROM t_general WHERE c0='CONTROL'").fetchone()[0], 0)
                 self.assertEqual(con.execute("SELECT COUNT(*) FROM t_general WHERE c0='OP-X'").fetchone()[0], 1)
-                self.assertEqual(con.execute("SELECT _clave FROM t_general WHERE c2='F1'").fetchone()[0], 'FACTURA\x1f1\x1fF1')
+                self.assertEqual(con.execute("SELECT _clave FROM t_general WHERE c4='F1'").fetchone()[0], 'FACTURA\x1f1\x1fF1')
                 self.assertEqual([r[0] for r in con.execute("SELECT nombre FROM _columnas WHERE tabla='resumen' ORDER BY posicion")], ['Control', 'Saldo SGA', 'Saldo ERP', 'Diferencia', 'Resultado / cantidad', 'Detalle'])
                 self.assertEqual(con.execute("SELECT c1, c2 FROM t_resumen WHERE c0='TOTAL GENERAL POR COMPROBANTE'").fetchone(), ('119.00', '106.00'))
                 self.assertEqual(con.execute('SELECT COUNT(*) FROM t_resumen').fetchone()[0], tablas['resumen'])
