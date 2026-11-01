@@ -7,8 +7,8 @@ mensual" (actualizado al 22/10/2026). Los motivos exactos salen de
 ## Qué hace
 
 Compara el estado de cada cheque registrado en SGA con el estado registrado en los valores de tesorería
-de ERP, que se toma como **referencia**. Produce un listado con los casos que necesitan revisión y un
-resumen con las cantidades procesadas. Controla estados de las filas de SGA: no concilia importes ni
+de ERP, que se toma como **referencia**. Produce un listado con los casos que necesitan revisión, un
+resumen con las cantidades procesadas y el pedido de corrección para Sistemas. Controla estados de las filas de SGA: no concilia importes ni
 fechas, no filtra por fondo ni por fecha y no exige que todos los cheques de ERP estén en SGA.
 
 ## Entradas
@@ -20,6 +20,9 @@ fechas, no filtra por fondo ni por fecha y no exige que todos los cheques de ERP
 
 - Los nombres de archivo son libres. Puede haber otras solapas, pero cada archivo debe tener **una
   única** hoja con las columnas requeridas (si hay cero o más de una, corta).
+- Columnas opcionales (pedido de quien usa el reporte, 31/10/2026): `Fecha` y `Fecha de depósito`. Se
+  reconocen sin distinguir mayúsculas, acentos ni espacios (`Fecha de deposito`, `FechaDeposito`). Sin
+  ellas el reporte corre igual: las columnas salen vacías y el registro lo avisa.
 - Se leen las filas con algún valor a partir de la segunda. No se modifican los Excel de origen.
 
 ## Reglas de negocio
@@ -76,7 +79,8 @@ fijas (ver `docs/pendientes.md`).
 
 | Archivo | Tabla | Columnas | Clave de revisión |
 |---|---|---|---|
-| `Cheques_para_revisar.csv` | `revisar` | `Motivo`, `ID ERP`, `ID SGA`, `Empresa`, `CUIT`, `Numero cheque`, `Importe SGA`, `Estado SGA`, `Estado ERP`, `Fila SGA`, `Filas ERP`. Con varios tramos se agregan `Archivo SGA` (después de `Fila SGA`) y `Archivos ERP` (después de `Filas ERP`) | `ID SGA` + `Motivo` |
+| `Cheques_para_revisar.csv` | `revisar` | `Motivo`, `ID ERP`, `ID SGA`, `Empresa`, `CUIT`, `Numero cheque`, `Importe SGA`, `Estado SGA`, `Estado ERP`, `Fecha`, `Fecha de depósito`, `Fila SGA`, `Filas ERP`. Con varios tramos se agregan `Archivo SGA` (después de `Fila SGA`) y `Archivos ERP` (después de `Filas ERP`) | `ID SGA` + `Motivo` |
+| `Pedido_a_sistemas.csv` | `pedido_sistemas` (informativa) | `ID SGA`, `Fecha de depósito`: los cheques con motivo `Diferencia de estado`, para pedir a Sistemas que corrija el estado | `ID SGA` |
 | `Resumen.txt` | `resumen` | Encabezado con los archivos usados; una línea `etiqueta: cantidad` por categoría en el orden en que aparecieron (`Filas ERP`, …, `Total para revisar`); párrafo de alcance | `Concepto` |
 
 - `Cheques_para_revisar.csv` contiene sólo los casos a revisar; si todo es válido tiene únicamente el
@@ -85,6 +89,9 @@ fijas (ver `docs/pendientes.md`).
   si viene como texto se copia tal cual.
 - `Estado ERP` y `Filas ERP` listan los valores de todos los registros encontrados separados por ` / `
   (varios sólo en duplicados).
+- `Fecha` es la del registro de ERP; `Fecha de depósito`, la de ERP o, si ERP no la trae, la de SGA. Se
+  muestran como `dd/mm/aaaa` (varias, separadas por ` / `, en duplicados). Sin registro en ERP, `Fecha`
+  queda vacía.
 - El orden de las filas es el de lectura de SGA.
 
 ## Limitaciones y advertencias
@@ -103,7 +110,8 @@ fijas (ver `docs/pendientes.md`).
   proveedores → válidos → cancelado → sin regla → comparación).
 - La transformación del ID (reemplazo de prefijo, conservación de ceros, comparación exacta) y la
   comparación de estados sin distinguir mayúsculas.
-- Los textos de los motivos y de las etiquetas del resumen, y las columnas del CSV en su orden.
+- Los textos de los motivos y de las etiquetas del resumen, y las columnas del CSV en su orden. La
+  regresión contra el legado compara el CSV sin `Fecha` y `Fecha de depósito`, que el legado no tiene.
 - El orden de las filas (el de SGA) y el formato de `Importe SGA`.
 
 Cualquier cambio en esto exige correr `herramientas/regresion_legado.py control_cheques` y anotar el

@@ -41,6 +41,7 @@ class Api:
         ruta('GET', '/api/configuracion', self.configuracion)
         ruta('PATCH', '/api/configuracion', self.guardar_configuracion)
         ruta('POST', '/api/cerrar', self.cerrar)
+        ruta('POST', '/api/reiniciar', self.reiniciar)
         ruta('POST', '/api/limpieza', self.limpieza)
         ruta('GET', '/api/parametros/([a-z_]+)', self.parametros)
         ruta('GET', '/api/cierres', self.cierres)
@@ -64,6 +65,11 @@ class Api:
         ruta('POST', '/api/ejecuciones/([^/]+)/ejecutar', self.ejecutar)
         ruta('GET', '/api/ejecuciones/([^/]+)/tablas', self.tablas)
         ruta('GET', '/api/ejecuciones/([^/]+)/tablas/([a-z0-9_]+)', self.tabla)
+        ruta('GET', '/api/ejecuciones/([^/]+)/tablas/([a-z0-9_]+)/distintos', self.distintos)
+        ruta('GET', '/api/ejecuciones/([^/]+)/exportar-vista', self.exportar_vista)
+        ruta('GET', '/api/ejecuciones/([^/]+)/origen/estado', self.origen_estado)
+        ruta('POST', '/api/ejecuciones/([^/]+)/origen/preparar', self.origen_preparar)
+        ruta('GET', '/api/ejecuciones/([^/]+)/origen', self.origen)
         ruta('POST', '/api/ejecuciones/([^/]+)/triage', self.triage)
         ruta('POST', '/api/ejecuciones/([^/]+)/traer-revision-anterior', self.traer_revision_anterior)
         ruta('GET', '/api/ejecuciones/([^/]+)/exportar', self.exportar_ejecucion)
@@ -174,10 +180,18 @@ class Api:
         self._json(h, conf)
 
     def cerrar(self, h, mt, q):
+        self._body(h)  # se lee aunque no se use: si queda en la conexión, ensucia la petición siguiente
         if self.s.trabajos.activos():
             raise _error(409, 'Hay un reporte corriendo. Esperá a que termine o cancelalo antes de cerrar.')
         self._json(h, {'ok': True})
         self.s.apagar(0.5)
+
+    def reiniciar(self, h, mt, q):
+        self._body(h)
+        if self.s.trabajos.activos():
+            raise _error(409, 'Hay un reporte corriendo. Esperá a que termine o cancelalo antes de reiniciar.')
+        self._json(h, {'ok': True})
+        self.s.reiniciar()
 
     def limpieza(self, h, mt, q):
         cuerpo = self._body(h)
@@ -456,7 +470,7 @@ class Api:
         try:
             t = self.s.trabajos.lanzar(e['id'], catalogo.interprete(d['codigo'], self.s.raiz) + ['--trabajo', str(rutas['carpeta'])],
                                        cwd=self.s.raiz, env={'PYTHONPATH': f'{self.s.raiz};{self.s.raiz / "vendor"}'},
-                                       registro=rutas['registro'], titulo=f'{d["nombre"]} · {c["periodo"]} · versión {e["version"]}')
+                                       registro=rutas['registro'], titulo=f'{d["nombre"]} · ' + (f'{_mes_corto(c["periodo"])} · ' if c.get('periodo') else '') + f'v{e["version"]}')
         except ValueError as err:
             raise _error(409, str(err))
         e = self.s.dominio.actualizar_estado(e['id'], 'corriendo', trabajoId=t['id'], error=None)
@@ -465,11 +479,7 @@ class Api:
 
     # ---------- resultados ----------
     def _titulos(self, e):
-        try:
-            d = catalogo.obtener(e['reporte'])
-        except KeyError:
-            return {}
-        return {s['tabla']: s for s in d['salidas']}
+        return self.s.dominio._salidas_de(e['id'], anteriores=True)
 
     def tablas(self, h, mt, q):
         e = self._ejecucion(mt.group(1))
@@ -478,22 +488,104 @@ class Api:
         lista = []
         for t in tablas.listar():
             d = definiciones.get(t['tabla'], {})
-            lista.append({**t, 'titulo': d.get('titulo', t['titulo']), 'archivo': d.get('archivo'), 'hoja': d.get('hoja'),
-                          'revisable': d.get('revisable', True), 'principal': bool(d.get('principal'))})
+            lista.append({**t, 'titulo': d.get('titulo', t['titulo']), 'archivo': d.get('archivo'), 'hoja': d.get('hoja'), 'seccion': d.get('seccion'),
+                          # tabla de una versión anterior del reporte: la pantalla avisa que conviene correr una nueva
+                          'anterior': bool(definiciones) and (bool(d.get('anterior')) or not d),
+                          'revisable': d.get('revisable', True), 'principal': bool(d.get('principal')),
+                          'vista': d.get('vista'), 'origen': bool(d.get('origen')), 'revisar': d.get('revisar')})
         self._json(h, {'tablas': lista, 'resumen': e.get('resumen'), 'traslado': e.get('traslado'), 'revision': e.get('revision')})
+
+    @staticmethod
+    def _lista_json(q, clave):
+        if not q.get(clave):
+            return None
+        try:
+            valor = json.loads(q[clave])
+        except ValueError:
+            raise _error(400, 'El filtro no es válido.')
+        return valor
+
+    def _consulta_de(self, q):
+        """Filtros, búsqueda y orden de una consulta de tabla, tal como los manda la grilla o Exportar."""
+        filtros = self._lista_json(q, 'filtros')
+        if filtros is not None and (not isinstance(filtros, dict) or not all(
+                isinstance(v, list) or (isinstance(v, dict) and isinstance(v.get('excluir', []), list)) for v in filtros.values())):
+            raise _error(400, 'El filtro no es válido.')
+        condiciones = self._lista_json(q, 'condiciones')
+        if condiciones is not None and (not isinstance(condiciones, dict) or not all(isinstance(v, dict) for v in condiciones.values())):
+            raise _error(400, 'El filtro no es válido.')
+        return {'orden': q.get('orden') or None, 'descendente': q.get('desc') == '1', 'filtro': q.get('filtro', ''),
+                'estado': q.get('estado') or None, 'columna_filtro': q.get('columna') or None, 'filtros': filtros,
+                'estados': [x for x in (q.get('estados') or '').split(',') if x] or None,
+                'con_obs': q.get('conObs') == '1', 'requiere': q.get('requiere') == '1', 'condiciones': condiciones}
 
     def tabla(self, h, mt, q):
         e = self._ejecucion(mt.group(1))
         try:
             r = self.s.dominio.tablas(e['id']).consultar(
-                mt.group(2), desde=int(q.get('desde', 0) or 0), cantidad=int(q.get('cantidad', 100) or 100),
-                orden=q.get('orden') or None, descendente=q.get('desc') == '1', filtro=q.get('filtro', ''),
-                estado=q.get('estado') or None, columna_filtro=q.get('columna') or None)
+                mt.group(2), desde=int(q.get('desde', 0) or 0), cantidad=int(q.get('cantidad', 100) or 100), **self._consulta_de(q))
         except FileNotFoundError as err:
             raise _error(404, str(err))
         except ValueError as err:
             raise _error(400, str(err))
         self._json(h, r)
+
+    def distintos(self, h, mt, q):
+        e = self._ejecucion(mt.group(1))
+        try:
+            # valoresDe: la columna de la lista (filtro de encabezado); el resto de la consulta son los otros filtros.
+            if q.get('valoresDe'):
+                columna, consulta = q['valoresDe'], self._consulta_de(q)
+            else:
+                columna, consulta = q.get('columna') or '', self._consulta_de({k: v for k, v in q.items() if k != 'columna'})
+            r = self.s.dominio.tablas(e['id']).distintos(mt.group(2), columna, buscar=q.get('buscar', ''),
+                                                         por_valor=q.get('ordenValores') == 'valor', **consulta)
+        except FileNotFoundError as err:
+            raise _error(404, str(err))
+        except ValueError as err:
+            raise _error(400, str(err))
+        self._json(h, r)
+
+    def exportar_vista(self, h, mt, q):
+        e = self._ejecucion(mt.group(1))
+        tabla = q.get('tabla') or ''
+        if not re.match(r'^[a-z0-9_]+$', tabla):
+            raise _error(400, 'Indicá qué tabla exportar.')
+        columnas = self._lista_json(q, 'columnas')
+        if columnas is not None and (not isinstance(columnas, list) or not all(isinstance(c, str) for c in columnas)):
+            raise _error(400, 'Las columnas no son válidas.')
+        try:
+            datos, nombre = exportar.exportar_vista(self.s.dominio, e, tabla, self._consulta_de(q), columnas, q.get('resumen') == '1')
+        except (ValueError, FileNotFoundError) as err:
+            raise _error(400, str(err))
+        c = self.s.dominio.obtener_cierre(e['cierreId']) or {}
+        sufijo = f' - {c.get("periodo") or ""} v{e["version"]}'.replace('  ', ' ')
+        self.s.responder_bytes(h, datos, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', f'{Path(nombre).stem}{sufijo} (vista).xlsx')
+
+    def origen_estado(self, h, mt, q):
+        self._json(h, self.s.origenes.estado(self._ejecucion(mt.group(1))))
+
+    def origen_preparar(self, h, mt, q):
+        self._body(h)  # se lee aunque no se use: si queda en la conexión, ensucia la petición siguiente
+        self._json(h, self.s.origenes.preparar(self._ejecucion(mt.group(1))))
+
+    def origen(self, h, mt, q):
+        e = self._ejecucion(mt.group(1))
+        tabla = q.get('tabla') or ''
+        try:
+            fila = int(q.get('fila', ''))
+        except ValueError:
+            raise _error(400, 'Indicá la fila.')
+        if not re.match(r'^[a-z0-9_]+$', tabla):
+            raise _error(400, 'Indicá la tabla.')
+        from .origenes import SinOrigen
+        try:
+            datos, nombre = self.s.origenes.libro(e, tabla, fila)
+        except SinOrigen as err:
+            raise _error(409, str(err))
+        except (ValueError, FileNotFoundError) as err:
+            raise _error(400, str(err))
+        self.s.responder_bytes(h, datos, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', nombre)
 
     def triage(self, h, mt, q):
         e = self._ejecucion(mt.group(1))
@@ -519,6 +611,7 @@ class Api:
         self._json(h, {'marcadas': n, 'revision': resumen, 'estados': {t['tabla']: t['estados'] for t in self.s.dominio.tablas(e['id']).listar()}})
 
     def traer_revision_anterior(self, h, mt, q):
+        self._body(h)  # se lee aunque no se use: si queda en la conexión, ensucia la petición siguiente
         e = self._ejecucion(mt.group(1))
         r = self.s.dominio.traer_revision_cierre_anterior(e['id'])
         self.s.bus.emitir('ejecucion', self.s.dominio.obtener_ejecucion(e['id']))
@@ -590,6 +683,19 @@ class Api:
         self._json(h, {'ok': True})
 
     def cancelar(self, h, mt, q):
+        self._body(h)  # se lee aunque no se use: si queda en la conexión, ensucia la petición siguiente
         if not self.s.trabajos.cancelar(int(mt.group(1))):
             raise _error(409, 'El reporte no está corriendo.')
         self._json(h, {'ok': True})
+
+
+MESES_CORTOS = ('ene.', 'feb.', 'mar.', 'abr.', 'may.', 'jun.', 'jul.', 'ago.', 'sep.', 'oct.', 'nov.', 'dic.')
+
+
+def _mes_corto(periodo):
+    """'2026-10' -> 'oct. 2026' (para títulos cortos)."""
+    try:
+        anio, mes = str(periodo).split('-')
+        return f'{MESES_CORTOS[int(mes) - 1]} {anio}'
+    except (ValueError, IndexError):
+        return str(periodo)

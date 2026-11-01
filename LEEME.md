@@ -55,21 +55,52 @@ correr, en curso, terminado con tantas filas pendientes, o resultado final.
    cada archivo (por sus columnas, no por el nombre) y te lo dice en palabras: por ejemplo "Reconocí el
    histórico de cuenta corriente, hoja Datos, 458.658 filas". Si falta uno, hay dos iguales o no
    reconoce alguno, no te deja seguir y te dice qué corregir. Si en este cierre ya subiste el mismo
-   histórico para otro reporte, te lo ofrece para no volver a subirlo.
+   histórico para otro reporte, te lo ofrece para no volver a subirlo. El tacho al lado de cada archivo
+   lo quita del cierre (el original de tu PC no se toca); los que no reconoce, como un Excel exportado que
+   se subió por error, aparecen aparte en *Archivos del cierre que no reconocí* y también se pueden quitar.
+   Un archivo que usa alguna versión del cierre no se puede quitar.
 2. **Opciones.** Fecha de corte, alcance y las listas que antes estaban fijas en el programa (cuentas,
    conceptos, prefijos). Cada campo tiene su ayuda. Normalmente no hay que tocar nada: los valores son
    los de siempre. Si cambiás algo, podés guardarlo "para los próximos cierres".
 3. **Ejecución.** Se ve el avance en lenguaje llano y hay un botón para cancelar. Si el reporte necesita
    que hagas algo (en facturas: iniciar sesión en Chrome), te lo pide y espera a que aprietes
    **Continuar**.
-4. **Resultados.** A la izquierda, las tablas de resultado; a la derecha, la tabla elegida con
-   búsqueda, filtros y orden. Marcás cada fila como **Revisada** u **Omitir**, o le anotás una
+4. **Resultados.** A la izquierda, las tablas de resultado, agrupadas bajo el título de su Excel (por
+   ejemplo, *Control Netos Impuestos* con MORA, Mes en curso e Histórico): tocá el título para abrirlas o
+   cerrarlas. A la derecha, la tabla elegida con búsqueda, filtros y orden. Marcás cada fila como **Revisada** u **Omitir**, o le anotás una
    **Observación**. Arriba ves cuántas quedan pendientes. Las tablas de totales o de respaldo (por
    ejemplo *Resumen*) aparecen aparte, bajo **Información**: se consultan, pero no se revisan fila por
    fila ni cuentan como pendientes.
-5. **Exportar.** Bajás el Excel original (tal cual lo genera el reporte) o el **trabajado**: el mismo
-   libro con las columnas *Estado revisión* y *Observaciones* completas con lo que marcaste, con opción
-   de dejar afuera las omitidas. Acá también marcás la ejecución como **resultado final** del cierre.
+   - Sólo cuentan las filas que hay que revisar: en la conciliación, las que no dan COINCIDE. El filtro
+     **Para revisar** muestra ésas. **Todas** muestra también las que coinciden, con la marca *No requiere*.
+   - El embudo de cada título filtra como en Excel. En las columnas de texto tildás los valores: la
+     lista muestra lo que queda con los otros filtros y se busca escribiendo. En los importes elegís una
+     condición: distinto de cero, igual, mayor, menor o entre dos valores. Los filtros activos se ven
+     arriba de la tabla y se quitan con la cruz; se limpian al cambiar de tabla.
+   - **Columnas** elige qué columnas ver y en qué orden; también podés arrastrar el título de una columna.
+     La vista queda guardada para ese reporte.
+   - **Exportar**, en la barra de la tabla, baja un Excel con todas las filas del filtro elegido, no sólo la página, con
+     tus columnas en tu orden.
+   - En la conciliación, el botón verde de cada fila baja un Excel con las filas de SGA y de ERP que la
+     forman, con las columnas del archivo original: primero las de SGA, dos filas libres y después las de
+     ERP. En *Control Netos Impuestos* (Controles SGA) baja la fila del histórico de SGA con las celdas a
+     completar o corregir en anaranjado, como en pantalla, para pedir la corrección. Para eso la
+     herramienta pasa los Excel de entrada a un formato de consulta rápida: lo hace sola al terminar la
+     corrida y tarda alrededor de un minuto por cada 60 MB.
+5. **Exportar.** Armás el Excel que necesitás en lugar de bajar todo: qué filas (las que hay que
+   revisar, todas, o algunos valores del resultado), qué estado de revisión (y si querés sólo las que
+   tienen observación) y qué columnas (las de tu vista o todas), con la hoja Resumen al principio si
+   querés. Antes de bajarlo te dice cuántas filas va a tener. Más abajo sigue estando el libro completo
+   del reporte, con todas sus solapas y tu revisión. Acá también marcás la ejecución como **resultado
+   final** del cierre.
+
+### Tareas: lo que tarda
+
+Arriba a la derecha, al lado de Ayuda, está el botón de **Tareas**. Muestra lo que tarda: los reportes que
+corren, los Excel que se arman y los archivos que se suben, cada uno con su avance, cuánto tardó y su
+resultado. Lo que pedís aparece además en una tarjeta abajo a la derecha que, al terminar, se guarda en
+Tareas. Si pedís de nuevo algo que ya está en curso, por ejemplo el mismo Excel, la herramienta te avisa
+en lugar de repetirlo. Mientras una acción trabaja, su botón muestra que está ocupado.
 
 ### Revisada, omitida, pendiente
 
@@ -112,7 +143,11 @@ administrativos, saldo MORA, comprobantes abiertos y concepto/agrupador, separan
 La primera vez que lo corrés en un cierre, al terminar te muestra las **reglas propuestas** por concepto
 (qué datos exige, qué agrupador suele tener). Las que validás las marcás como confirmadas y volvés a
 correr: así los faltantes con regla confirmada salen como ERROR en vez de REVISAR. Las reglas confirmadas
-quedan guardadas para los cierres siguientes.
+quedan guardadas para los cierres siguientes. En Resultados, *Control de servicios administrativos* tiene
+tres solapas: *Mes en curso* (lo facturado o pendiente del mes de la fecha de corte), *No exigibles* (los
+casos cuyo mes de facturación todavía no comenzó) e *Histórico* (todo lo anterior, también los meses
+anteriores de este año). *Comprobantes abiertos* tiene su propia sección. Una versión corrida antes de
+este cambio muestra un aviso: corré una versión nueva para verla así (lo que ya revisaste pasa solo).
 
 **Control de Mora.** Pide el Saldo de comprobación de ERP y el histórico de SGA, bajados al mismo
 corte. Compara el saldo de las cinco cuentas de mora del fondo general con la suma de los movimientos
@@ -121,8 +156,9 @@ DIFERENCIA), más los respaldos con las filas que entraron en cada suma.
 
 **Control de cheques.** Pide el Excel de cheques de SGA y el de Valores registrados de tesorería de
 ERP. Compara el estado de cada cheque tomando ERP como referencia y devuelve la lista de cheques para
-revisar, con el motivo (diferencia de estado, ID no encontrado, duplicado…), y un resumen con las
-cantidades.
+revisar, con el motivo (diferencia de estado, ID no encontrado, duplicado…), la fecha y la fecha de
+depósito, y un resumen con las cantidades. Además arma el *Pedido a sistemas*: el ID de SGA y la fecha de
+depósito de cada cheque con diferencia de estado, para pedir que corrijan el estado.
 
 **Descarga de facturas** (sección **Facturas**, aparte del cierre). Pide uno o más listados Excel con CUIT y número de factura (las columnas
 pueden llamarse de distintas maneras y estar en cualquier lugar). En Opciones, la primera vez, cargás
@@ -165,6 +201,7 @@ En Configuración también está **Limpieza**: borra los Excel de entrada que ni
 |---|---|
 | Hacés doble clic y no se abre nada, o se cierra una ventana negra enseguida | Falta Python o se instaló sin "Add Python to PATH". Instalalo de nuevo desde python.org marcando esa casilla. Si sigue igual, abrí `Reportes de cierre - consola.bat`: deja la ventana abierta con el mensaje, y ese mensaje es lo que hay que mandar. |
 | La página dice "Abrí la herramienta desde su acceso directo" | Entraste a la dirección guardada en el navegador de otra vez. Cerrá esa pestaña y volvé a hacer doble clic en `Reportes de cierre.bat` (o en su acceso directo). |
+| Una franja dice que la herramienta se actualizó | Se instaló una versión nueva con la herramienta abierta. Tocá **Reiniciar la herramienta** en la franja: se cierra y se vuelve a abrir sola en unos segundos. |
 | "No se pudo hablar con la herramienta. ¿Se cerró?" | La herramienta se apagó (se apaga sola después de tres horas sin uso). Volvé a abrirla desde el acceso directo; lo que tenías guardado sigue ahí. |
 | "No reconocí qué reporte es" | El archivo no tiene las columnas del reporte original. Fijate que sea el Excel descargado del sistema, sin editar, y que la hoja de datos esté entera (no un resumen). Si es un formato nuevo, avisá a quien te dio la herramienta. |
 | "Hay dos archivos de …; dejá uno solo" o "Archivo duplicado por contenido" | Subiste dos veces el mismo archivo, o dos del mismo tipo que no son tramos. Sacá uno. Si son las dos partes de un reporte cortado, agregalos los dos en la misma entrada. |
@@ -172,6 +209,7 @@ En Configuración también está **Limpieza**: borra los Excel de entrada que ni
 | "Posible descarga recortada" | Es un aviso, no un error. Fijate si el sistema te dio un segundo archivo y agregalo como tramo. |
 | El reporte terminó con error | Abrí **"Ver el registro completo"** en el paso Ejecución. Si el mensaje te dice qué corregir (una columna que falta, un importe vacío), corregí el archivo de origen y volvé a correr. Si no, mandá el registro a quien te dio la herramienta: el botón lo descarga como archivo de texto; podés adjuntarlo a un mail. |
 | "Se cerró la herramienta mientras el reporte corría" | Se apagó la PC o se cerró la herramienta con un reporte en marcha. Volvé a ejecutar esa versión; no quedó nada a medias en tus marcas. |
+| Excel de origen: "Ya no está el archivo de entrada…" | La **Limpieza** de Configuración borró un Excel que usó esa versión. Agregalo de nuevo en el paso Archivos y corré una versión nueva. |
 | Facturas: "Todavía no está instalada" | Hacé doble clic en `Instalar descarga de facturas.bat`, esperá a que diga Listo y volvé a abrir la herramienta. |
 | Descarga de facturas: error de sesión o "La respuesta no es un PDF" | Chrome no estaba con la sesión iniciada cuando apretaste Continuar. Volvé a ejecutar, iniciá sesión, esperá a ver la biblioteca y recién ahí apretá Continuar. |
 
@@ -182,3 +220,7 @@ Configuración). Si hay un reporte corriendo te
 avisa para que esperes o lo canceles. Cerrar la pestaña del navegador no la apaga: sigue trabajando y
 se apaga sola después de tres horas sin uso. Para volver a abrirla, doble clic en `Reportes de cierre.bat`
 o en su acceso directo: si ya estaba abierta, simplemente te lleva a la pantalla.
+
+En el mismo menú está **Reiniciar la herramienta**: la cierra y la vuelve a abrir sola en unos segundos,
+en la misma pantalla. Sirve si algo quedó trabado o después de instalar una versión nueva. Lo que tenés
+guardado no se pierde; si hay un reporte corriendo, te pide que esperes o lo canceles.

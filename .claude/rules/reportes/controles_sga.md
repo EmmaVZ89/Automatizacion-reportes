@@ -12,9 +12,10 @@ paths: ["**/reportes/controles_sga/**"]
 
 ## Archivos de la carpeta
 
-- `reporte.py`: definición `REPORTE`: listas de conceptos (exentos, con aporte, imputación condicional), `SALIDAS` (once tablas, una por solapa, con `CLAVES` por control) y los parámetros, incluida la tabla `reglas`.
+- `reporte.py`: definición `REPORTE`: listas de conceptos (exentos, con aporte, imputación condicional), `SALIDAS` (doce tablas, una por solapa, con `CLAVES` por control) y los parámetros, incluida la tabla `reglas`. Las tres de netos declaran `origen`; servicios y abiertos, `seccion`. `SALIDAS_ANTERIORES` guarda `servicios_anio` (versiones de antes de los servicios por mes) para mostrar esas corridas y trasladar sus marcas.
 - `motor.py`: copia de `legado/controles_sga/control_sga.py` (v1.5): lectura, `default_rules`, `controls`, `open_documents`, consolidación de netos. Devuelve los libros, las reglas propuestas y el resumen.
-- `excel.py`: copia de `excel_sga.py`: arma los seis libros con solapas, celdas anaranjadas y bloque original de SGA.
+- `excel.py`: copia de `excel_sga.py`: arma los seis libros con solapas, celdas anaranjadas y bloque original de SGA. Servicios se parte por mes (`mensual_servicios`; solapas en orden Mes en curso / No exigibles / Histórico), no por año.
+- `origen.py`: Excel de origen de netos: la fila del histórico de SGA (`Fila SGA`, `Archivo`) con las columnas de `_marcas` que son del bloque original pintadas de anaranjado. Contrato en `app/origenes.py`; no cambia la matemática.
 - `ejecutar.py`: punto de entrada del subproceso; vuelca sólo las tablas de `salidas_a_generar` y emite `reglas_propuestas` en el resumen.
 
 ## Contrato de `ejecutar.py`

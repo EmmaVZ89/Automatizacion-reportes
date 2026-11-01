@@ -61,6 +61,8 @@ class ServidorTests(unittest.TestCase):
         self.assertIn('disponible', facturas)
         self.assertEqual(estado['trabajosActivos'], 0)
         self.assertNotIn('token', estado)
+        self.assertIs(estado['reiniciar'], False)
+        self.assertEqual(estado['origenes'], [])
 
     def test_crud_cierres_y_ejecuciones(self):
         status, _, c = self.c.post('/api/cierres', {'periodo': '2026-10', 'corte': '2026-10-31', 'nombre': 'Octubre'})
@@ -102,6 +104,36 @@ class ServidorTests(unittest.TestCase):
         status, _, cuerpo = self.c.get('/api/herramientas/control_mora')
         self.assertEqual(status, 404)
         self.assertIn('cierre mensual', cuerpo['error'])
+
+    def test_post_que_no_usa_el_cuerpo_no_ensucia_la_conexion(self):
+        import http.client
+        _, _, c = self.c.post('/api/cierres', {'periodo': '2026-10', 'corte': '2026-10-31'})
+        _, _, e = self.c.post('/api/ejecuciones', {'cierre': c['id'], 'reporte': 'conciliacion_general'})
+        con = http.client.HTTPConnection('127.0.0.1', self.s.puerto, timeout=30)
+        cab = {'Cookie': f'reportes_token={self.s.token}', 'Content-Type': 'application/json'}
+        try:
+            for ruta in (f'/api/ejecuciones/{e["id"]}/traer-revision-anterior', f'/api/ejecuciones/{e["id"]}/origen/preparar', '/api/trabajos/999/cancelar'):
+                con.request('POST', ruta, body=b'{}', headers=cab)
+                con.getresponse().read()
+                con.request('GET', '/api/estado', headers=cab)
+                r = con.getresponse()
+                r.read()
+                self.assertEqual(r.status, 200, ruta)
+        finally:
+            con.close()
+
+    def test_reiniciar_arranca_otra_con_el_mismo_token_y_puerto(self):
+        import threading
+        from unittest import mock
+        from app.servidor import comando_reinicio
+        cerrado = threading.Event()
+        with mock.patch('subprocess.Popen') as popen, mock.patch.object(self.s, 'cerrar', side_effect=cerrado.set):
+            status, _, r = self.c.post('/api/reiniciar', {})
+            self.assertTrue(cerrado.wait(5), 'no soltó el puerto')
+        self.assertEqual((status, r), (200, {'ok': True}))
+        comando = popen.call_args[0][0]
+        self.assertEqual(comando, comando_reinicio(self.s.dir_datos, self.s.token, self.s.puerto))
+        self.assertEqual(comando[-2:], ['--reinicio', self.s.token])
 
     def test_error_inesperado_no_filtra_traza(self):
         status, _, cuerpo = self.c.get('/api/pruebas/error')

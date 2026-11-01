@@ -30,9 +30,29 @@ Diseño: `docs/superpowers/specs/2026-10-31-herramienta-cierre-design.md`. Plan:
   `esperar` (pausa para una acción manual; el server manda `continuar`/`cancelar` por stdin).
 - `app/tablas.py` + `app/reportes/_comun/salidas.py`: cada tabla de salida se vuelca a `resultados.sqlite` de la
   ejecución (paginado, filtro, orden, triage por clave de negocio). `triage.json` es la fuente de verdad de la revisión.
-- `app/exportar.py`: Excel "trabajado" (columnas Estado revisión y Observaciones), exportar/importar cierre (ZIP).
+- Consultas de tabla (`Tablas._consulta`, armadas por `Api._consulta_de` desde la URL): búsqueda, estado, `requiere`,
+  `filtros` ({columna: [valores]} o {columna: {excluir: [...]}}) y `condiciones` ({columna: {op, a, b}} con op
+  `distinto_cero|igual|mayor|menor|entre`). `Tablas.distintos` arma la lista de valores de un filtro de encabezado
+  con los demás filtros aplicados (parámetro `valoresDe` en la URL).
+- `app/exportar.py`: Excel "trabajado" (columnas Estado revisión y Observaciones), `exportar_vista` (las filas de una
+  consulta, sin paginar, con las columnas elegidas; lo usan el botón "Exportar" de la grilla y el armado del paso Exportar),
+  exportar/importar cierre (ZIP).
+- `app/origenes.py` + `app/reportes/_comun/cache_filas.py`: Excel de origen de una fila. Cada hoja de entrada se copia
+  una vez, en un subproceso, a `archivos/<sha8>/filas-<hoja>.sqlite` (bloques de filas comprimidos, con formatos de
+  número y anchos); la copia se arma al terminar la corrida o al pedirla. El reporte que lo ofrece marca la salida con
+  `origen: True` y tiene `origen.py` (contrato en el docstring de `app/origenes.py`; lo implementan
+  `conciliacion_general/origen.py` y `controles_sga/origen.py`). `filas_de` puede devolver, por fila, las columnas a
+  pintar de anaranjado (`Tablas.fila` trae `_marcas`, las observadas en pantalla). La limpieza borra las copias con
+  su archivo.
 - `app/catalogo.py`: carga `app/reportes/*/reporte.py` (entradas con detector, parámetros con default, salidas con
-  clave de revisión, `orden`, `requiere`). Campos de presentación: `ambito` (`cierre` o `herramienta`: la Descarga
+  clave de revisión, `orden`, `requiere`). En cada salida, además: `revisar` ({columna, salvo}: las filas con esos
+valores no cuentan como pendientes; `Tablas` recibe estas reglas desde `Dominio.tablas` y `REVISION_V` recuenta las
+corridas guardadas con otra regla), `vista` ({primero, ocultas}: vista por defecto de la grilla; la del usuario se
+guarda en `configuracion.json` > `vistas`), `origen` y `seccion` (título de la sección en Resultados; un libro de una
+sola tabla con `seccion` también se muestra como sección). En la definición del reporte, `salidas_anteriores` lista
+tablas que dejaban versiones anteriores (con su `libro` y `hoja`): esas corridas se muestran agrupadas y con aviso
+(`anterior` en `/api/ejecuciones/<id>/tablas`), y `Dominio._hermanas` hace que las marcas que no encuentran su fila
+en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_triage(..., hermanas)`). Campos de presentación: `ambito` (`cierre` o `herramienta`: la Descarga
   de facturas no es del cierre y vive en un espacio propio, `Dominio.espacio_herramienta`, fuera de
   `listar_cierres`; la interfaz la muestra en la sección Facturas) e `icono` (nombre de un `<symbol id="i-…">` del
   sprite de `index.html`). En cada salida: `principal: True` marca la tabla que se abre primero en Resultados y
@@ -43,7 +63,16 @@ Diseño: `docs/superpowers/specs/2026-10-31-herramienta-cierre-design.md`. Plan:
   test. Íconos: sprite SVG en `index.html` (`icono('i-…')`), nunca imágenes ni fuentes externas. Piezas comunes en
   `app.js`: `dialogo()` (confirmaciones con tono), `abrirModal()`, `abrirMenu()`/`botonMenu()`, `aviso()` (avisos
   con barra de tiempo), `abrirAyuda(clave)` (cajón de ayuda: `AYUDA_PASOS`, `AYUDA_GENERAL`), `bienvenida()` (guía
-  de inicio; `configuracion.bienvenida` recuerda que ya se vio) y `fiesta()` (al terminar la revisión). Las
+  de inicio; `configuracion.bienvenida` recuerda que ya se vio) y `tareas` (visor de tareas: todo lo que tarda pasa
+  por `tareas.correr({clave, titulo})`, que avisa si la misma clave ya está en curso; las descargas, por
+  `descargar(ruta, titulo)`; los reportes y el Excel de origen llegan por los eventos `trabajo` y `origen`). Un `btn()`
+  cuya acción devuelve una promesa se marca solo como ocupado. Los redibujos que llegan por eventos van con
+  `enSilencio()` (sin animaciones de entrada). Las clases de tono de los diálogos llevan prefijo (`tono-aviso`): no
+  reusar nombres de clase de otros componentes (`.aviso` es la notificación). Si el código de `app/` cambia con la
+  herramienta abierta, `/api/estado` devuelve `reiniciar` y la pantalla lo avisa con "Reiniciar la herramienta"
+  (también en el menú): `POST /api/reiniciar` → `Servidor.reiniciar` lanza `python -m app.arranque --reinicio TOKEN`
+  con el mismo token y puerto y se cierra; la instancia nueva espera a que se suelte el puerto, y la pantalla espera
+  a que `/api/estado` devuelva otra `instancia` y recarga. En Windows el puerto es exclusivo (`_ServidorHttp`). Las
   animaciones van siempre, también con "reducir movimiento" del sistema: es una decisión del dueño del
   repositorio.
 

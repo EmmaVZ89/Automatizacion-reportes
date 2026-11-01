@@ -29,7 +29,13 @@ REPORTE = {
     'salidas': [
         {'tabla': 'resumen', 'titulo': 'Resumen', 'archivo': 'Conciliacion_general.xlsx', 'hoja': 'Resumen', 'clave': ['Control'], 'revisable': False},
         {'tabla': 'general', 'titulo': 'Conciliación general', 'archivo': 'Conciliacion_general.xlsx', 'hoja': 'Conciliación general', 'principal': True,
-         'clave': ['Tipo', 'Cliente', 'Comprobante'], 'revision_en_libro': {'estado': 'Estado revision', 'obs': 'Observaciones'}},
+         'clave': ['Tipo', 'Cliente', 'Comprobante'], 'revision_en_libro': {'estado': 'Estado revision', 'obs': 'Observaciones'},
+         # Las filas que coinciden se ven y se pueden marcar, pero no cuentan como pendientes de revisar.
+         'revisar': {'columna': 'Resultado', 'salvo': ['COINCIDE']},
+         # Vista por defecto de la grilla: Resultado al lado de la revisión; las columnas técnicas, ocultas.
+         'vista': {'primero': ['Resultado'], 'ocultas': ['Filas SGA', 'Filas ERP', 'Origen SGA (primeras 5)', 'Origen ERP (primeras 5)', 'Estado revision', 'Fondo']},
+         # Cada fila puede bajar un Excel con sus filas de origen de SGA y ERP (ver origen.py).
+         'origen': True},
     ],
     'archivos': ['Conciliacion_general.xlsx', 'Respaldo_tecnico/Conciliacion_general.csv', 'Respaldo_tecnico/Resumen.json'],
 }

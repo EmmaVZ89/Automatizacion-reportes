@@ -1,14 +1,27 @@
 """Control de estados de cheques SGA contra ERP. Requiere openpyxl (vendor/).
 
 Es el script de legado/control_cheques con los cambios mínimos: parámetros explícitos en lugar de
-constantes, entradas en uno o más tramos y mensajes por `informar` (el módulo protocolo)."""
+constantes, entradas en uno o más tramos y mensajes por `informar` (el módulo protocolo).
+
+Cambios pedidos por quien usa el reporte (31/10/2026): cada cheque para revisar trae la Fecha y la Fecha de depósito
+(de ERP; la de depósito, de SGA si ERP no la trae). Las dos columnas son opcionales: con los archivos de antes salen
+vacías. Además se arma Pedido_a_sistemas.csv con el ID de SGA y la fecha de depósito de los cheques con diferencia de
+estado, para pedir la corrección. El resto (cruce, motivos y resumen) es el del legado."""
 import csv
+import re
+import unicodedata
+from datetime import date, datetime
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from .._comun import protocolo
 
-CAMPOS = ['Motivo', 'ID ERP', 'ID SGA', 'Empresa', 'CUIT', 'Numero cheque', 'Importe SGA', 'Estado SGA', 'Estado ERP', 'Fila SGA', 'Filas ERP']
+CAMPOS = ['Motivo', 'ID ERP', 'ID SGA', 'Empresa', 'CUIT', 'Numero cheque', 'Importe SGA', 'Estado SGA', 'Estado ERP', 'Fecha', 'Fecha de depósito', 'Fila SGA', 'Filas ERP']
+CAMPOS_PEDIDO = ['ID SGA', 'Fecha de depósito']
+MOTIVO_PEDIDO = 'Diferencia de estado'
+# Nombres de las columnas opcionales, comparados sin mayúsculas, acentos ni espacios.
+ALIAS_FECHA = {'fecha'}
+ALIAS_DEPOSITO = {'fechadedeposito', 'fechadeposito', 'fechadepósito'}
 COLUMNAS_SGA = ['IdCheque', 'Estado']
 COLUMNAS_ERP = ['Id de Transacción', 'Estado', 'Pagado a']
 PARAMETROS_DEFAULT = {
@@ -27,6 +40,26 @@ def texto(valor):
     if isinstance(valor, float) and valor.is_integer():
         return str(int(valor))
     return str(valor).strip()
+
+
+def _alias(nombre):
+    return re.sub('[^a-z0-9]', '', unicodedata.normalize('NFKD', str(nombre or '')).encode('ascii', 'ignore').decode().lower())
+
+
+def columna_opcional(dato, alias):
+    """Valor de la primera columna del registro cuyo nombre coincide con algún alias, o None si no está."""
+    for nombre, valor in dato.items():
+        if _alias(nombre) in alias:
+            return valor
+    return None
+
+
+def fecha_texto(valor):
+    if isinstance(valor, datetime):
+        return valor.strftime('%d/%m/%Y') if (valor.hour, valor.minute, valor.second) == (0, 0, 0) else valor.strftime('%d/%m/%Y %H:%M')
+    if isinstance(valor, date):
+        return valor.strftime('%d/%m/%Y')
+    return texto(valor)
 
 
 def id_erp(valor, prefijo_sga, prefijo_erp):
@@ -97,13 +130,27 @@ def controlar(sga, erp, destino, parametros=None, informar=protocolo):
         else:
             resumen['Filas ERP sin ID (no se pueden cruzar)'] += 1
     revisiones = []
+    vistas = {'deposito': False}
+    def fechas(dato, encontrados):
+        de_erp = [columna_opcional(x[0], ALIAS_DEPOSITO) for x in encontrados]
+        if any(v is not None for v in de_erp):
+            vistas['deposito'] = True
+        deposito = ' / '.join(fecha_texto(v) for v in de_erp if v not in (None, ''))
+        if not deposito:
+            propio = columna_opcional(dato, ALIAS_DEPOSITO)
+            if propio is not None:
+                vistas['deposito'] = True
+            deposito = fecha_texto(propio)
+        return ' / '.join(fecha_texto(columna_opcional(x[0], ALIAS_FECHA)) for x in encontrados if columna_opcional(x[0], ALIAS_FECHA) not in (None, '')), deposito
     def agregar(dato, fila, archivo, clave, motivo, encontrados):
+        fecha, deposito = fechas(dato, encontrados)
         revision = {
             'Motivo': motivo, 'ID ERP': clave, 'ID SGA': texto(dato['IdCheque']),
             'Empresa': texto(dato.get('RazonSocial')), 'CUIT': texto(dato.get('Cuit')),
             'Numero cheque': texto(dato.get('NumeroCheque')), 'Importe SGA': dato.get('Importe'),
             'Estado SGA': texto(dato['Estado']),
             'Estado ERP': ' / '.join(texto(x[0]['Estado']) for x in encontrados),
+            'Fecha': fecha, 'Fecha de depósito': deposito,
             'Fila SGA': fila, 'Filas ERP': ' / '.join(str(x[1]) for x in encontrados)}
         if varios_sga:
             revision['Archivo SGA'] = archivo
@@ -162,6 +209,14 @@ def controlar(sga, erp, destino, parametros=None, informar=protocolo):
             if isinstance(dato['Importe SGA'], (int, float)):
                 dato['Importe SGA'] = f"{dato['Importe SGA']:.2f}".replace('.', ',')
             escritor.writerow(dato)
+    with (destino / 'Pedido_a_sistemas.csv').open('w', encoding='utf-8-sig', newline='') as archivo:
+        escritor = csv.writer(archivo, delimiter=';')
+        escritor.writerow(CAMPOS_PEDIDO)
+        for dato in revisiones:
+            if dato['Motivo'] == MOTIVO_PEDIDO:
+                escritor.writerow([dato['ID SGA'], dato['Fecha de depósito']])
+    if not vistas['deposito']:
+        informar.log('Los archivos no traen la columna "Fecha de depósito": esa columna sale vacía.')
     with (destino / 'Resumen.txt').open('w', encoding='utf-8') as archivo:
         archivo.write(f"CONTROL DE CHEQUES\nSGA: {' / '.join(x.name for x in sga)}\nERP: {' / '.join(x.name for x in erp)}\n\n")
         for etiqueta, cantidad in resumen.items():

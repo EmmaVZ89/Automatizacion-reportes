@@ -16,6 +16,7 @@ from .tablas import Tablas
 COL_ESTADO = 'Estado revisión'
 COL_OBS = 'Observaciones'
 TEXTO_ESTADO = {'pendiente': '', 'revisada': 'Revisada', 'omitida': 'Omitida'}
+TEXTO_REVISION = {'pendiente': 'Pendiente', 'revisada': 'Revisada', 'omitida': 'Omitida'}
 
 
 def _definiciones(e):
@@ -30,6 +31,12 @@ def _hoja_de_tabla(tablas, info, definicion, incluir_omitidas, nombre_hoja=None)
     columnas = list(info['columnas'])
     tipos = list(info['tipos'])
     rev = (definicion or {}).get('revision_en_libro') or {}
+    if (definicion or {}).get('revisable') is False:
+        # Tabla informativa (totales, respaldos, pedido a sistemas): sale tal cual, sin columnas de revisión.
+        filas = [list(f['valores']) for f in tablas.filas_completas(info['tabla'], True)]
+        titulo = (definicion or {}).get('titulo') or info['titulo']
+        return {'nombre': (nombre_hoja or (definicion or {}).get('hoja') or titulo)[:31], 'titulo': titulo, 'columnas': columnas, 'tipos': tipos,
+                'filas': filas, 'nota': '', 'resaltadas': set()}
     i_estado = columnas.index(rev['estado']) if rev.get('estado') in columnas else None
     i_obs = columnas.index(rev['obs']) if rev.get('obs') in columnas else None
     if i_estado is None:
@@ -73,6 +80,85 @@ def exportar_tabla(dominio, e, tabla, incluir_omitidas=True):
     defs, _ = _definiciones(e)
     hoja = _hoja_de_tabla(tablas, info, defs.get(tabla), incluir_omitidas)
     return _bytes_de_libro([hoja]), (defs.get(tabla, {}).get('archivo') or tabla + '.xlsx')
+
+
+def _texto_revision(f):
+    if f['_estado'] == 'pendiente' and not f.get('_req', True):
+        return 'No requiere'
+    return TEXTO_REVISION.get(f['_estado'], f['_estado'])
+
+
+def _importe(v):
+    """1234.5 -> '1.234,5' (como se escribe en la pantalla)."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return ''
+    texto = f'{x:,.2f}'.rstrip('0').rstrip('.') if x != int(x) else f'{int(x):,}'
+    return texto.replace(',', '§').replace('.', ',').replace('§', '.')
+
+
+def describir_consulta(consulta):
+    """Los filtros de una exportación en una línea, para la nota de la hoja."""
+    partes = []
+    if consulta.get('requiere'):
+        partes.append('sólo las filas para revisar')
+    estados = consulta.get('estados') or ([consulta['estado']] if consulta.get('estado') else [])
+    if estados:
+        partes.append('revisión: ' + ', '.join(TEXTO_REVISION.get(x, x).lower() for x in estados))
+    if consulta.get('con_obs'):
+        partes.append('con observación')
+    for columna, valores in (consulta.get('filtros') or {}).items():
+        excluir = isinstance(valores, dict)
+        textos = [v if v != '' else '(vacío)' for v in (valores.get('excluir', []) if excluir else valores)]
+        partes.append(f'{columna}: ' + ('todos menos ' if excluir else '') + ', '.join(textos[:8]) + ('…' if len(textos) > 8 else ''))
+    for columna, c in (consulta.get('condiciones') or {}).items():
+        texto = {'distinto_cero': 'distinto de cero', 'igual': 'igual a {a}', 'mayor': 'mayor que {a}', 'menor': 'menor que {a}',
+                 'entre': 'entre {a} y {b}'}.get(c.get('op'), '')
+        partes.append(f'{columna} ' + texto.format(a=_importe(c.get('a')), b=_importe(c.get('b'))))
+    if consulta.get('filtro'):
+        partes.append(f'búsqueda «{consulta["filtro"]}»' + (f' en {consulta["columna_filtro"]}' if consulta.get('columna_filtro') else ''))
+    return ('Filtros: ' + '; '.join(partes) + '.') if partes else 'Todas las filas.'
+
+
+def exportar_vista(dominio, e, tabla, consulta, columnas=None, incluir_informativas=False):
+    """Una tabla como se ve en Resultados: las filas que cumplen la consulta (todas, sin paginar), en su orden, con
+    las columnas elegidas en su orden, más Revisión y las observaciones. Con `incluir_informativas`, suma antes las
+    tablas informativas del mismo libro (por ejemplo, Resumen)."""
+    tablas = dominio.tablas(e['id'])
+    lista = tablas.listar()
+    info = next((t for t in lista if t['tabla'] == tabla), None)
+    if not info:
+        raise ValueError('No existe esa tabla en los resultados.')
+    defs, _ = _definiciones(e)
+    d = defs.get(tabla) or {}
+    nombres = info['columnas']
+    elegidas = [c for c in (columnas or []) if c in nombres] or list(nombres)
+    indices = [nombres.index(c) for c in elegidas]
+    tipos = [info['tipos'][i] for i in indices]
+    revisable = d.get('revisable', True) is not False
+    col_obs = 'Observaciones de la revisión' if COL_OBS in nombres else COL_OBS
+
+    def filas():
+        for f in tablas.filas_vista(tabla, **consulta):
+            valores = [f['valores'][i] for i in indices]
+            yield [_texto_revision(f)] + valores + [f['_obs']] if revisable else valores
+
+    titulo = d.get('titulo') or info['titulo']
+    hojas = [{'nombre': (d.get('hoja') or titulo)[:31], 'titulo': titulo,
+              'columnas': ['Revisión'] + elegidas + [col_obs] if revisable else elegidas,
+              'tipos': ['texto'] + tipos + ['texto'] if revisable else tipos,
+              'filas': filas(), 'nota': describir_consulta(consulta)}]
+    if incluir_informativas:
+        for s in defs.values():
+            if s.get('revisable') is not False or s['tabla'] == tabla or s.get('archivo') != d.get('archivo'):
+                continue
+            inf = next((t for t in lista if t['tabla'] == s['tabla']), None)
+            if inf:
+                hojas.insert(len(hojas) - 1, {'nombre': (s.get('hoja') or s.get('titulo') or inf['titulo'])[:31], 'titulo': s.get('titulo') or inf['titulo'],
+                                              'columnas': inf['columnas'], 'tipos': inf['tipos'],
+                                              'filas': (f['valores'] for f in tablas.filas_completas(s['tabla']))})
+    return _bytes_de_libro(hojas), Path(d.get('archivo') or tabla).stem + '.xlsx'
 
 
 def exportar_libro(dominio, e, libro, incluir_omitidas=True):

@@ -25,11 +25,19 @@ SALIDAS = [
     {'tabla': 'datos_historico', 'libro': 'Control_Datos_Obligatorios', 'hoja': 'Histórico', 'titulo': 'Datos obligatorios · Histórico'},
     {'tabla': 'agrupador_anio', 'libro': 'Control_Concepto_Agrupador', 'hoja': 'Año en curso', 'titulo': 'Concepto y agrupador · Año en curso'},
     {'tabla': 'agrupador_historico', 'libro': 'Control_Concepto_Agrupador', 'hoja': 'Histórico', 'titulo': 'Concepto y agrupador · Histórico'},
-    {'tabla': 'servicios_anio', 'libro': 'Control_Servicios_Administrativos', 'hoja': 'Año en curso', 'titulo': 'Servicios administrativos · Año en curso'},
+    {'tabla': 'servicios_mes', 'libro': 'Control_Servicios_Administrativos', 'hoja': 'Mes en curso', 'titulo': 'Servicios administrativos · Mes en curso'},
+    {'tabla': 'servicios_noexigibles', 'libro': 'Control_Servicios_Administrativos', 'hoja': 'No exigibles', 'titulo': 'Servicios administrativos · No exigibles'},
     {'tabla': 'servicios_historico', 'libro': 'Control_Servicios_Administrativos', 'hoja': 'Histórico', 'titulo': 'Servicios administrativos · Histórico'},
     {'tabla': 'abiertos', 'libro': 'Comprobantes_Abiertos', 'hoja': 'Comprobantes abiertos', 'titulo': 'Comprobantes abiertos'},
     {'tabla': 'saldo_mora', 'libro': 'Saldo_MORA', 'hoja': 'Saldo por fondo', 'titulo': 'Saldo MORA'},
 ]
+# Tablas que dejaban las versiones anteriores del reporte: sirven para mostrar esas corridas agrupadas en su sección y
+# para pasar sus marcas a las tablas que las reemplazan (las del mismo libro).
+SALIDAS_ANTERIORES = [
+    {'tabla': 'servicios_anio', 'libro': 'Control_Servicios_Administrativos', 'hoja': 'Año en curso', 'titulo': 'Servicios administrativos · Año en curso'},
+]
+# Título de la sección en Resultados, cuando no alcanza con el nombre del libro.
+SECCIONES = {'Control_Servicios_Administrativos': 'Control de servicios administrativos', 'Comprobantes_Abiertos': 'Comprobantes abiertos'}
 CLAVES = {
     'netos': ['FondoDeRiesgo', 'CodigoEmpresa', 'NumeroFactura', 'NumeroComprobanteImputacion', 'Fila SGA'],
     'datos': ['FondoDeRiesgo', 'CodigoEmpresa', 'NumeroFactura', 'NumeroComprobanteImputacion', 'Control'],
@@ -40,11 +48,15 @@ CLAVES = {
 }
 LIBROS = ['Control_Netos_Impuestos', 'Control_Datos_Obligatorios', 'Control_Servicios_Administrativos', 'Saldo_MORA', 'Comprobantes_Abiertos', 'Control_Concepto_Agrupador']
 
-for s in SALIDAS:
+for s in SALIDAS + SALIDAS_ANTERIORES:
     s['archivo'] = s['libro'] + '.xlsx'
     s['clave'] = CLAVES[s['tabla'].split('_')[0]]
+    if s['libro'] in SECCIONES:
+        s['seccion'] = SECCIONES[s['libro']]
     if s['tabla'] == 'saldo_mora':
         s['revisable'] = False  # dos filas de saldo por fondo: información, no se revisa fila por fila
+    if s['tabla'].startswith('netos_'):
+        s['origen'] = True  # cada fila baja la fila del histórico de SGA con las celdas observadas en anaranjado
 
 REPORTE = {
     'codigo': 'controles_sga',
@@ -87,5 +99,6 @@ REPORTE = {
          'ayuda': 'Vacío: se usa la propuesta estadística del reporte. Después de la primera corrida podés confirmar las reglas propuestas acá.'},
     ],
     'salidas': SALIDAS,
+    'salidas_anteriores': SALIDAS_ANTERIORES,
     'archivos': [l + '.xlsx' for l in LIBROS] + ['reglas_propuestas.json', 'ejecucion.json'],
 }

@@ -2,7 +2,9 @@
 
     python -m app.arranque [--sin-navegador] [--puerto N] [--datos CARPETA] [--consola]
 
-Si ya hay una instancia viva (datos/.servidor.json responde), sólo abre el navegador en ella."""
+Si ya hay una instancia viva (datos/.servidor.json responde), sólo abre el navegador en ella.
+Con --reinicio TOKEN (lo usa "Reiniciar la herramienta"): espera a que la instancia anterior se apague y arranca con
+ese token y en ese puerto, para que la pantalla abierta siga funcionando."""
 import argparse
 import json
 import os
@@ -61,9 +63,15 @@ def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3
     p.add_argument('--puerto', type=int, default=PUERTO_INICIAL)
     p.add_argument('--datos')
     p.add_argument('--consola', action='store_true')
+    p.add_argument('--reinicio', help=argparse.SUPPRESS)
     args = p.parse_args(argv)
     carpeta = dir_datos(args.datos)
     carpeta.mkdir(parents=True, exist_ok=True)
+    if args.reinicio:
+        for _ in range(100):  # hasta 20 s a que se apague la anterior
+            if not instancia_viva(carpeta, timeout=0.5):
+                break
+            time.sleep(0.2)
     viva = instancia_viva(carpeta)
     if viva:
         url = f'http://127.0.0.1:{viva["puerto"]}/?t={viva["token"]}'
@@ -80,7 +88,16 @@ def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3
                 archivo.unlink()
         except OSError:
             pass
-    servidor = crear_servidor(carpeta, puerto_inicial=args.puerto, intentos=INTENTOS_PUERTO, inactividad_segundos=inactividad_segundos, al_cerrar=al_cerrar)
+    servidor = None
+    if args.reinicio:
+        for _ in range(25):  # el mismo puerto, apenas lo suelte la instancia anterior
+            try:
+                servidor = crear_servidor(carpeta, puerto_inicial=args.puerto, intentos=1, token=args.reinicio, inactividad_segundos=inactividad_segundos, al_cerrar=al_cerrar)
+                break
+            except OSError:
+                time.sleep(0.4)
+    if servidor is None:
+        servidor = crear_servidor(carpeta, puerto_inicial=args.puerto, intentos=INTENTOS_PUERTO, token=args.reinicio, inactividad_segundos=inactividad_segundos, al_cerrar=al_cerrar)
     escribir_json_atomico(archivo, {'pid': os.getpid(), 'puerto': servidor.puerto, 'token': servidor.token, 'inicio': time.strftime('%Y-%m-%dT%H:%M:%S')})
     if args.consola:
         print(f'Reportes de cierre en {servidor.url_con_token}')

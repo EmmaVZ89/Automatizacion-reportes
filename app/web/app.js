@@ -49,7 +49,18 @@
   const icono = (nombre, clase = '') => svg('svg', { class: ('i ' + clase).trim(), 'aria-hidden': 'true' }, svg('use', { href: '#' + nombre }));
   const limpiar = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
   function btn(texto, onclick, clase = '', opciones = {}) {
-    const b = el('button', { type: 'button', class: 'btn ' + clase, onclick, title: opciones.title, disabled: opciones.disabled, 'aria-label': opciones.aria });
+    const alTocar = onclick ? ev => {
+      if (b.classList.contains('cargando')) return;
+      const r = onclick(ev);
+      if (r && typeof r.then === 'function') {
+        const antes = b.disabled;
+        b.classList.add('cargando');
+        b.setAttribute('aria-busy', 'true');
+        b.disabled = true;
+        r.finally(() => { b.classList.remove('cargando'); b.removeAttribute('aria-busy'); b.disabled = antes; });
+      }
+    } : null;
+    const b = el('button', { type: 'button', class: 'btn ' + clase, onclick: alTocar, title: opciones.title, disabled: opciones.disabled, 'aria-label': opciones.aria });
     if (opciones.icono) b.appendChild(icono(opciones.icono));
     if (texto) b.appendChild(el('span', null, texto));
     return b;
@@ -87,6 +98,8 @@
   }
 
   // ---------------------------------------------------------------- servidor
+  // Cambia un texto sólo si es distinto (no toca el nodo si no hace falta).
+  const ponerTexto = (nodo, texto) => { if (nodo && nodo.textContent !== texto) nodo.textContent = texto; };
   function progresoGlobal(delta) {
     estado.cargas = Math.max(0, estado.cargas + delta);
     $('#progreso-global').classList.toggle('activo', estado.cargas > 0);
@@ -96,7 +109,7 @@
     if (opciones.crudo) { init.body = cuerpo; Object.assign(init.headers, opciones.cabeceras || {}); }
     else if (cuerpo !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(cuerpo); }
     let mostrada = false;
-    const lento = setTimeout(() => { mostrada = true; progresoGlobal(1); }, 250);
+    const lento = opciones.silencioso ? 0 : setTimeout(() => { mostrada = true; progresoGlobal(1); }, 250);
     let r;
     try {
       r = await fetch(ruta, init);
@@ -123,6 +136,7 @@
     const quitar = () => { if (!caja.isConnected) return; caja.classList.add('saliendo'); setTimeout(() => caja.remove(), 250); };
     $('#avisos').appendChild(caja);
     setTimeout(quitar, ms);
+    return { cerrar: quitar };
   }
   const avisarError = e => aviso(e.message || String(e), 'error', 9000);
 
@@ -132,7 +146,7 @@
     return new Promise(resolve => {
       const d = $('#dialogo');
       limpiar(d);
-      d.className = 'dialogo ' + tono;
+      d.className = 'dialogo tono-' + tono;
       let entrada = null;
       if (campo) {
         entrada = campo.multilinea ? el('textarea', { 'aria-label': titulo, rows: '4' }) : el('input', { type: campo.tipo || 'text', 'aria-label': titulo });
@@ -164,7 +178,7 @@
       el('div', { class: 'modal-cabecera' }, tileNodo || (iconoNombre ? el('span', { class: 'tile', style: 'width:38px;height:38px;background:var(--accent-suave);color:var(--accent)' }, icono(iconoNombre)) : null),
         el('h2', null, titulo), el('button', { type: 'button', class: 'btn fantasma icono', 'aria-label': 'Cerrar', onclick: cerrar }, icono('i-x'))),
       el('div', { class: 'modal-cuerpo' }, cuerpo),
-      pie.length ? el('div', { class: 'modal-pie' }, pie) : null);
+      ...(pie.length ? [el('div', { class: 'modal-pie' }, pie)] : []));
     d.onclose = () => { if (alCerrar) alCerrar(); };
     d.showModal();
     const principal = d.querySelector('.modal-pie .btn.primario');
@@ -208,30 +222,250 @@
     return envoltura;
   }
 
-  // ---------------------------------------------------------------- confeti
-  function fiesta() {
-    const lienzo = $('#lienzo-fiesta');
-    const ctx = lienzo.getContext('2d');
-    const ancho = lienzo.width = window.innerWidth;
-    const alto = lienzo.height = window.innerHeight;
-    const colores = ['#3445B4', '#FF8A5B', '#18A16B', '#FFD166', '#6D3FC9', '#0B8AC9'];
-    const piezas = Array.from({ length: 150 }, () => ({
-      x: ancho / 2 + (Math.random() - .5) * ancho * .3, y: alto * .35, vx: (Math.random() - .5) * 15, vy: -Math.random() * 15 - 5,
-      r: Math.random() * Math.PI, vr: (Math.random() - .5) * .35, w: 7 + Math.random() * 6, h: 4 + Math.random() * 5, c: colores[Math.floor(Math.random() * colores.length)],
-    }));
-    const inicio = performance.now();
-    const cuadro = t => {
-      const dt = Math.min(1, (t - inicio) / 2400);
-      ctx.clearRect(0, 0, ancho, alto);
-      for (const p of piezas) {
-        p.vy += .38; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
-        ctx.save(); ctx.globalAlpha = 1 - dt; ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
-      }
-      if (dt < 1) requestAnimationFrame(cuadro); else ctx.clearRect(0, 0, ancho, alto);
+  // ---------------------------------------------------------------- tareas
+  // Visor de tareas, como Trabajos en PedidosIA: todo lo que tarda queda listado con su avance y su resultado, y se
+  // vuelve a ver desde el botón de la barra. Entran las acciones de la pantalla (descargas, subidas, preparar el Excel
+  // de origen) y los reportes que corren. Si se pide de nuevo algo que ya está en curso, se avisa en vez de repetirlo.
+  // Lo que pide el usuario muestra además una tarjeta abajo a la derecha que, al terminar, vuela hasta el botón.
+  const tareas = (() => {
+    const lista = new Map();
+    let abierto = false;
+    let reloj = null;
+    let sinVer = 0;
+    let tarjeta = null;
+    const activa = t => t.estado === 'curso' || t.estado === 'espera';
+    const ICONO_ESTADO = { ok: 'i-check', error: 'i-x', espera: 'i-mano', cancelada: 'i-detener' };
+    const duracion = t => {
+      const s = Math.max(0, Math.round(((t.fin || Date.now()) - t.inicio) / 1000));
+      return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s` : `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min`;
     };
-    requestAnimationFrame(cuadro);
-  }
+    const iconoDe = t => el('span', { class: 'tarea-icono' }, t.estado === 'curso' ? el('span', { class: 'girador' }) : icono(ICONO_ESTADO[t.estado] || 'i-info'));
+    const filas = new Map();  // clave -> { nodo, estado }: las filas del panel se reusan
+    const barraDe = t => el('div', { class: 'tarea-barra' + (t.progreso == null ? ' indeterminada' : '') }, el('div', { style: t.progreso == null ? '' : `width:${Math.max(3, Math.round(t.progreso * 100))}%` }));
+    function latir(tipo) {
+      const b = $('#btn-tareas');
+      if (!b) return;
+      b.classList.remove('late', 'late-ok', 'late-error');
+      void b.offsetWidth;
+      b.classList.add('late', tipo === 'ok' ? 'late-ok' : tipo === 'error' ? 'late-error' : 'late');
+    }
+    function pintarBoton() {
+      const b = $('#btn-tareas');
+      if (!b) return;
+      const activas = [...lista.values()].filter(activa);
+      const espera = activas.some(t => t.estado === 'espera');
+      b.classList.toggle('corriendo', activas.some(t => t.estado === 'curso'));
+      b.classList.toggle('esperando', espera);
+      const una = activas.length === 1 && activas[0].progreso != null ? activas[0].progreso : null;
+      b.classList.toggle('con-pct', una != null);
+      if (una != null) b.style.setProperty('--pct', Math.round(una * 100) + '%');
+      const n = $('#tareas-n');
+      n.textContent = activas.length ? String(activas.length) : '';
+      n.className = 'tareas-n' + (activas.length ? (espera ? ' espera' : '') : sinVer ? ' punto' : ' oculto');
+      const texto = activas.length ? `${activas.length === 1 ? 'una' : activas.length} en curso${espera ? '; una espera tu acción' : ''}` : sinVer ? 'hay resultados sin ver' : 'nada en curso';
+      b.title = 'Tareas: ' + texto;
+      b.setAttribute('aria-label', 'Tareas: ' + texto);
+    }
+    // Fila de hasta tres renglones: nombre y tiempo; detalle y acciones; barra de avance (sólo mientras corre).
+    function crearFila(t) {
+      const nodo = el('div', { class: 'tarea-fila ' + t.estado }, iconoDe(t),
+        el('div', { class: 'tarea-textos' },
+          el('div', { class: 'tarea-linea' }, el('b', { class: 'tarea-nombre' }), el('span', { class: 'tarea-tiempo' })),
+          el('div', { class: 'tarea-linea' }, el('span', { class: 'tarea-detalle' }),
+            el('span', { class: 'tarea-acciones' },
+              t.enlace ? el('a', { class: 'tarea-ver', href: t.enlace, onclick: () => abrir(false) }, t.estado === 'espera' ? 'Ir a continuar' : 'Ver') : null,
+              t.cancelar && activa(t) ? el('button', { type: 'button', class: 'tarea-cancelar', title: 'Cancelar', 'aria-label': 'Cancelar ' + t.titulo, onclick: () => t.cancelar() }, icono('i-detener')) : null)),
+          t.estado === 'curso' ? barraDe(t) : null));
+      return { nodo, estado: t.estado };
+    }
+    function actualizarFila(f, t) {
+      const nombre = f.nodo.querySelector('.tarea-nombre');
+      ponerTexto(nombre, t.titulo);
+      nombre.title = t.titulo;
+      const tiempo = f.nodo.querySelector('.tarea-tiempo');
+      ponerTexto(tiempo, duracion(t));
+      tiempo.title = activa(t) ? 'En curso desde hace ' + duracion(t) : 'Tardó ' + duracion(t);
+      const texto = (activa(t) ? t.detalle : (t.resultado || t.detalle)) || '';
+      const detalle = f.nodo.querySelector('.tarea-detalle');
+      ponerTexto(detalle, texto);
+      detalle.title = texto;
+      const relleno = f.nodo.querySelector('.tarea-barra > div');
+      if (relleno) {
+        relleno.parentNode.classList.toggle('indeterminada', t.progreso == null);
+        if (t.progreso != null) relleno.style.width = Math.max(3, Math.round(t.progreso * 100)) + '%';
+      }
+    }
+    function pintarPanel() {
+      const p = $('#panel-tareas');
+      if (!p || !abierto) return;
+      const todas = [...lista.values()].sort((a, b) => (Number(activa(b)) - Number(activa(a))) || (b.inicio - a.inicio));
+      const cuerpo = p.querySelector('.tareas-lista');
+      for (const [clave, f] of filas) if (!lista.has(clave)) { f.nodo.remove(); filas.delete(clave); }
+      const vacio = cuerpo.querySelector('.tareas-vacio');
+      if (!todas.length && !vacio) cuerpo.appendChild(el('div', { class: 'tareas-vacio' }, icono('i-tareas', 'g'), el('p', null, 'No hay tareas. Acá aparece lo que tarda (reportes que corren, Excel que se arman, archivos que se suben), con su avance y su resultado.')));
+      if (todas.length && vacio) vacio.remove();
+      todas.forEach((t, i) => {
+        let f = filas.get(t.clave);
+        if (!f || f.estado !== t.estado) {
+          const nueva = crearFila(t);
+          if (f) f.nodo.replaceWith(nueva.nodo);
+          f = nueva;
+          filas.set(t.clave, f);
+        }
+        actualizarFila(f, t);
+        if (cuerpo.children[i] !== f.nodo) cuerpo.insertBefore(f.nodo, cuerpo.children[i] || null);
+      });
+      p.querySelector('.tareas-limpiar').disabled = !todas.some(t => !activa(t));
+    }
+    function cambio(t) {
+      pintarBoton();
+      if (abierto) pintarPanel();
+      actualizarTarjeta(t);
+    }
+    function terminada(t, tipo) {
+      latir(tipo);
+      if (!abierto) sinVer++;
+    }
+    function abrir(v = !abierto) {
+      const p = $('#panel-tareas');
+      abierto = v;
+      p.classList.toggle('oculto', !v);
+      $('#btn-tareas').setAttribute('aria-expanded', String(v));
+      clearInterval(reloj);
+      if (!v) return;
+      cerrarMenu();
+      sinVer = 0;
+      pintarBoton();
+      pintarPanel();
+      reloj = setInterval(() => { if ([...lista.values()].some(activa)) pintarPanel(); }, 1000);
+    }
+    document.addEventListener('mousedown', ev => { if (abierto && !ev.target.closest('#panel-tareas, #btn-tareas, dialog')) abrir(false); });
+    document.addEventListener('keydown', ev => { if (abierto && ev.key === 'Escape' && !document.querySelector('dialog[open]')) abrir(false); });
 
+    // ---- tarjeta de la acción en curso (abajo a la derecha, arriba de los avisos)
+    function quitarTarjeta(volar) {
+      if (!tarjeta) return;
+      const { nodo, timer } = tarjeta;
+      clearTimeout(timer);
+      tarjeta = null;
+      const b = $('#btn-tareas');
+      if (!volar || !b || !nodo.isConnected) { nodo.remove(); return; }
+      const a = nodo.getBoundingClientRect();
+      const c = b.getBoundingClientRect();
+      const vuelo = nodo.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${c.left + c.width / 2 - (a.left + a.width / 2)}px, ${c.top + c.height / 2 - (a.top + a.height / 2)}px) scale(.12)`, opacity: .2 }],
+        { duration: 520, easing: 'cubic-bezier(.55,0,.7,.2)', fill: 'forwards' });
+      vuelo.finished.then(() => { nodo.remove(); latir(); }, () => nodo.remove());
+    }
+    function mostrarTarjeta(t) {
+      quitarTarjeta(false);
+      const nodo = el('div', { class: 'tarea-tarjeta', role: 'status', title: 'Tocá para mandarla a Tareas' });
+      nodo.addEventListener('click', () => quitarTarjeta(true));
+      tarjeta = { nodo, clave: t.clave, timer: null, estado: null };
+      $('#avisos').prepend(nodo);
+      actualizarTarjeta(t);
+    }
+    function actualizarTarjeta(t) {
+      if (!tarjeta || tarjeta.clave !== t.clave) return;
+      const n = tarjeta.nodo;
+      if (tarjeta.estado !== t.estado) {
+        tarjeta.estado = t.estado;
+        n.className = 'tarea-tarjeta ' + t.estado;
+        limpiar(n).append(iconoDe(t), el('div', { class: 'tarea-textos' }, el('b', null, t.titulo), el('div', { class: 'tarea-detalle' }), t.estado === 'curso' ? barraDe(t) : ''));
+        if (!activa(t)) tarjeta.timer = setTimeout(() => quitarTarjeta(true), t.estado === 'error' ? 9000 : 3200);
+      }
+      n.querySelector('.tarea-detalle').textContent = activa(t) ? (t.detalle || 'Trabajando…') : (t.resultado || '');
+      const relleno = n.querySelector('.tarea-barra > div');
+      if (relleno && t.progreso != null) { relleno.parentNode.classList.remove('indeterminada'); relleno.style.width = Math.max(3, Math.round(t.progreso * 100)) + '%'; }
+    }
+
+    // ---- tareas de la pantalla
+    function iniciar({ clave, titulo, detalle = '', enlace = null, progreso = null, conTarjeta = true }) {
+      const t = { clave, titulo, detalle, enlace, progreso, estado: 'curso', inicio: Date.now(), fin: null, resultado: '' };
+      lista.set(clave, t);
+      latir();
+      pintarBoton();
+      if (abierto) pintarPanel();
+      if (conTarjeta) mostrarTarjeta(t);
+      return {
+        avance(p, d) { if (lista.get(clave) !== t || !activa(t)) return; if (p !== undefined) t.progreso = p; if (d != null) t.detalle = d; cambio(t); },
+        terminar(texto = 'Listo', tipo = 'ok') {
+          if (lista.get(clave) !== t || !activa(t)) return;
+          t.estado = tipo === 'error' ? 'error' : 'ok';
+          t.fin = Date.now();
+          t.resultado = texto;
+          t.progreso = null;
+          cambio(t);
+          terminada(t, t.estado);
+        },
+      };
+    }
+    const enCurso = clave => { const t = lista.get(clave); return t && activa(t) ? t : null; };
+    // Corre `fn` como tarea. Si ya hay una con la misma clave en curso, avisa y no la repite (devuelve undefined).
+    async function correr(opciones, fn, textoRepetida) {
+      const ya = enCurso(opciones.clave);
+      if (ya) {
+        aviso(textoRepetida || `Ya está en curso: ${ya.titulo}. Te aviso cuando termine; lo ves en Tareas.`, 'info', 4500);
+        latir();
+        return undefined;
+      }
+      const t = iniciar(opciones);
+      try {
+        const r = await fn(t);
+        t.terminar(typeof r === 'string' ? r : 'Listo');
+        return r;
+      } catch (err) {
+        t.terminar(err.message || String(err), 'error');
+        throw err;
+      }
+    }
+
+    // ---- reportes que corren y copias del Excel de origen (llegan por los eventos)
+    const ESTADO_TRABAJO = { corriendo: 'curso', esperando: 'espera', ok: 'ok', error: 'error', cancelado: 'cancelada', interrumpido: 'error' };
+    function desdeTrabajo(tr, inicial = false) {
+      const clave = 'trabajo:' + tr.id;
+      const previa = lista.get(clave);
+      const nuevo = ESTADO_TRABAJO[tr.estado] || 'curso';
+      const t = previa || { clave, inicio: (tr.inicio || Date.now() / 1000) * 1000 };
+      const antes = previa ? previa.estado : null;
+      Object.assign(t, {
+        titulo: tr.titulo || 'Reporte', estado: nuevo,
+        progreso: nuevo === 'curso' && typeof tr.progreso === 'number' ? tr.progreso : null,
+        detalle: nuevo === 'espera' ? 'Espera tu acción: entrá y seguí las indicaciones.' : (tr.paso || ''),
+        resultado: nuevo === 'ok' ? 'Terminó bien: ya podés revisar los resultados.' : nuevo === 'cancelada' ? 'Se canceló.' : nuevo === 'error' ? (tr.error || 'Terminó con un error.') : '',
+        fin: tr.fin ? tr.fin * 1000 : null,
+        enlace: `#/ejecucion/${encodeURIComponent(tr.ejecucionId)}/${nuevo === 'ok' ? 4 : 3}`,
+        cancelar: async () => {
+          if (!await confirmar('¿Cancelar el reporte?', 'Se detiene la corrida. Podés volver a correrlo cuando quieras.', 'Cancelar el reporte', 'peligro')) return;
+          try { await api('POST', `/api/trabajos/${tr.id}/cancelar`, {}); } catch (err) { avisarError(err); }
+        },
+      });
+      lista.set(clave, t);
+      if (!inicial && !previa) latir();
+      if (!inicial && antes && antes !== nuevo && !activa(t)) terminada(t, nuevo === 'ok' ? 'ok' : 'error');
+      pintarBoton();
+      if (abierto) pintarPanel();
+    }
+    function desdeOrigen(o) {
+      const clave = 'origen:' + o.ejecucionId;
+      let t = lista.get(clave);
+      if (!t || (!activa(t) && !o.listo && !o.error)) {
+        t = { clave, titulo: 'Preparando el Excel de origen', detalle: 'Copia de consulta de los Excel de entrada; se hace una sola vez.', inicio: Date.now(), estado: 'curso', progreso: 0, fin: null, resultado: '' };
+        lista.set(clave, t);
+        latir();
+      }
+      if (o.error) { if (activa(t)) { t.estado = 'error'; t.resultado = o.error; t.fin = Date.now(); t.progreso = null; terminada(t, 'error'); } }
+      else if (o.listo) { if (activa(t)) { t.estado = 'ok'; t.resultado = 'Listo: el Excel de origen de cada fila sale al instante.'; t.fin = Date.now(); t.progreso = null; terminada(t, 'ok'); } }
+      else { t.estado = 'curso'; t.progreso = typeof o.progreso === 'number' ? o.progreso : null; }
+      cambio(t);
+    }
+    function sacarTerminadas() {
+      for (const [k, t] of lista) if (!activa(t)) lista.delete(k);
+      sinVer = 0;
+      pintarBoton();
+      pintarPanel();
+    }
+    return { iniciar, correr, enCurso, desdeTrabajo, desdeOrigen, abrir, sacarTerminadas, pintarBoton };
+  })();
   // ---------------------------------------------------------------- tema
   function aplicarTema(t) {
     const tema = t === 'oscuro' ? 'oscuro' : 'claro';
@@ -247,7 +481,7 @@
   const AYUDA_PASOS = {
     archivos: { titulo: 'Paso 1: Archivos', icono: 'i-subir', partes: [
       ['p', 'Elegís los Excel que descargaste de los sistemas (SGA y ERP). No hace falta renombrarlos: la herramienta los reconoce por sus columnas.'],
-      ['ul', ['Arrastrá los archivos a la zona punteada, o usá "Elegir archivos".', 'Si el archivo ya está en una carpeta de la PC, "Tomar de una carpeta" lo copia sin tocar el original.', 'Si el sistema cortó la descarga en dos o más archivos (pasa cerca de las 454.000 filas), agregá todos: se leen seguidos como uno solo.', 'Un archivo que se usa en varios reportes del mes (como el histórico de SGA) se sube una sola vez y queda disponible para los demás.']],
+      ['ul', ['Arrastrá los archivos a la zona punteada, o usá "Elegir archivos".', 'Si el archivo ya está en una carpeta de la PC, "Tomar de una carpeta" lo copia sin tocar el original.', 'Si el sistema cortó la descarga en dos o más archivos (pasa cerca de las 454.000 filas), agregá todos: se leen seguidos como uno solo.', 'Un archivo que se usa en varios reportes del mes (como el histórico de SGA) se sube una sola vez y queda disponible para los demás.', 'El tacho al lado de cada archivo lo quita del cierre (el original de tu PC no se toca). Los que la herramienta no reconoce, como un Excel exportado que se subió por error, aparecen aparte en "Archivos del cierre que no reconocí" y también se pueden quitar.']],
     ] },
     opciones: { titulo: 'Paso 2: Opciones', icono: 'i-ajustes', partes: [
       ['p', 'Los valores que ves son los que se usan si no tocás nada: casi siempre alcanza con revisar la fecha de corte y las opciones principales.'],
@@ -259,11 +493,14 @@
     ] },
     resultados: { titulo: 'Paso 4: Resultados', icono: 'i-tabla', partes: [
       ['p', 'Cada tabla del reporte se revisa acá adentro, sin abrir Excel.'],
-      ['ul', ['Hacé clic en una fila (o en varias) y usá "Revisada" u "Omitir". "Pendiente" deshace la marca.', 'Escribí una observación y guardala para las filas marcadas, o hacé doble clic en la columna Observaciones de una fila.', 'Buscá, filtrá por estado y ordená tocando el título de cada columna.', 'Lo que marques se guarda solo y pasa a la próxima versión del mismo mes. Con "Traer la revisión del cierre anterior" recuperás lo que ya habías omitido el mes pasado.']],
+      ['ul', ['A la izquierda, las tablas de cada Excel del reporte van bajo su título (por ejemplo, Control Netos Impuestos con MORA, Mes en curso e Histórico). Tocá el título para abrirlas o cerrarlas.', 'Hacé clic en una fila (o en varias) y usá "Revisada" u "Omitir". "Pendiente" deshace la marca.', 'Escribí una observación y guardala para las filas marcadas, o hacé doble clic en la columna de observaciones de una fila.', '"Para revisar" muestra sólo las filas que hay que mirar (en la conciliación, las que no dan COINCIDE). Las demás están en "Todas" con la marca "No requiere" y no cuentan como pendientes.', 'Buscá, filtrá por estado y ordená tocando el título de cada columna.', 'Lo que marques se guarda solo y pasa a la próxima versión del mismo mes. Con "Traer la revisión del cierre anterior" recuperás lo que ya habías omitido el mes pasado.']],
+      ['p', 'Tu vista de la tabla:'],
+      ['ul', ['El embudo de cada título filtra como en Excel. En las columnas de texto tildás los valores: la lista muestra lo que queda con los otros filtros y se puede buscar escribiendo. En los importes elegís una condición: distinto de cero, igual, mayor, menor o entre dos valores. Los filtros activos se ven arriba de la tabla y se quitan con la cruz.', '"Columnas" elige qué columnas ver y en qué orden. También podés arrastrar el título de una columna para moverla. La vista queda guardada para ese reporte.', 'El botón "Exportar" de la barra de la tabla baja un Excel con todas las filas del filtro elegido (no sólo la página que estás viendo), con tus columnas en tu orden.', 'En la conciliación, el botón verde de cada fila baja un Excel con las filas de SGA y de ERP que la forman, con las columnas del archivo original. En Control Netos Impuestos baja la fila del histórico de SGA con las celdas a completar o corregir en anaranjado, como en pantalla. La primera vez tarda alrededor de un minuto en prepararse.']],
     ] },
     exportar: { titulo: 'Paso 5: Exportar', icono: 'i-bajar', partes: [
-      ['p', 'Descargás el Excel "trabajado": el mismo del reporte, con las columnas Estado revisión y Observaciones completas con lo que marcaste.'],
-      ['ul', ['También están los archivos originales, tal como los produce el reporte.', 'Marcá la versión como "resultado final del cierre" cuando ya esté revisada: así queda registrada en el historial.']],
+      ['p', 'Armás el Excel que necesitás en lugar de bajar todo el reporte:'],
+      ['ul', ['Qué filas: las que hay que revisar, todas, o sólo algunos valores del resultado (por ejemplo, DIFERENCIA).', 'Qué estado de revisión: pendientes, revisadas u omitidas, y si querés sólo las que tienen observación.', 'Qué columnas: las de tu vista de Resultados, en tu orden, o todas. Podés sumar la hoja Resumen al principio.', 'Antes de bajarlo te dice cuántas filas va a tener.']],
+      ['ul', ['"Libros completos del reporte" baja el libro entero con todas sus solapas y tu revisión, por si lo necesitás así.', 'Marcá la versión como "resultado final del cierre" cuando ya esté revisada: así queda registrada en el historial.']],
     ] },
   };
   const AYUDA_GENERAL = [
@@ -295,6 +532,9 @@
         ['¿Puedo cerrar la pestaña mientras corre un reporte?', 'Sí. Sigue corriendo; al volver lo ves en el cierre o en el aviso de la barra de arriba.'],
         ['¿Qué pasa si corro un reporte de nuevo?', 'Se crea una versión nueva. Lo que revisaste en la anterior pasa solo a la nueva.'],
         ['¿La descarga de facturas es parte del cierre?', 'No. Es una herramienta aparte: la encontrás en la sección Facturas.'],
+        ['¿Dónde veo lo que está tardando?', 'En el botón de Tareas, arriba a la derecha, al lado de Ayuda. Muestra los reportes que corren, los Excel que se arman y los archivos que se suben, con su avance y su resultado. Si pedís de nuevo algo que ya está en curso, la herramienta te avisa en lugar de repetirlo.'],
+        ['Apareció una franja que dice que la herramienta se actualizó', 'Se instaló una versión nueva con la herramienta abierta. Tocá "Reiniciar la herramienta" en la franja: se cierra y se vuelve a abrir sola en unos segundos.'],
+        ['¿Cómo reinicio la herramienta?', 'Desde el menú de los tres puntos, "Reiniciar la herramienta". Sirve si algo quedó trabado o después de instalar una versión nueva. Lo que tenés guardado no se pierde; si hay un reporte corriendo, te pide que esperes o lo canceles.'],
         ['¿Cómo cierro la herramienta?', 'Desde el menú de los tres puntos, "Cerrar la herramienta". Igual se apaga sola después de tres horas sin uso.']]],
     ] },
     { clave: 'problemas', titulo: 'Si algo sale mal', icono: 'i-alerta', partes: [
@@ -478,42 +718,52 @@
     $('#vista').classList.toggle('ancha', vista === 'ejecucion');
     estado.vista = { nombre: vista, partes };
     detenerSondeo();
+    soltarCabecera();
+    cerrarPopoverFiltro();
     cerrarMenu();
     const r = { inicio: vistaInicio, cierre: () => vistaCierre(partes[1]), ejecucion: () => vistaEjecucion(partes[1], partes[2]), facturas: vistaFacturas, historial: vistaHistorial, configuracion: vistaConfiguracion }[vista];
-    (r || vistaInicio)().catch(avisarError);
+    return (r || vistaInicio)().catch(avisarError);
   }
   function detenerSondeo() { if (estado.sondeo) { clearInterval(estado.sondeo); estado.sondeo = null; } }
   function conectarEventos() {
     if (estado.fuente) estado.fuente.close();
     const f = new EventSource('/api/eventos');
     estado.fuente = f;
-    f.addEventListener('trabajo', ev => { const t = JSON.parse(ev.data); actualizarIndicador(); if (estado.w && estado.w.e && estado.w.e.trabajoId === t.id) pintarTrabajo(t); });
+    f.addEventListener('trabajo', ev => { const t = JSON.parse(ev.data); tareas.desdeTrabajo(t); if (estado.w && estado.w.e && estado.w.e.trabajoId === t.id) pintarTrabajo(t); });
+    f.addEventListener('origen', ev => {
+      const o = JSON.parse(ev.data);
+      tareas.desdeOrigen(o);
+      const pendiente = origenPendiente.get(o.ejecucionId);
+      if (o.listo && pendiente) { origenPendiente.delete(o.ejecucionId); pendiente().catch(avisarError); }
+      if (o.error) origenPendiente.delete(o.ejecucionId);
+    });
     f.addEventListener('ejecucion', ev => {
       const e = JSON.parse(ev.data);
-      actualizarIndicador();
       if (estado.w && estado.w.e && estado.w.e.id === e.id && !e.borrado) {
         const antes = estado.w.e.estado;
         if (antes !== e.estado) {
-          if (e.estado === 'ok' && (antes === 'corriendo' || antes === 'esperando')) { fiesta(); aviso(`${estado.w.reporte.nombre}: terminó bien. Ya podés revisar los resultados.`, 'ok'); }
-          vistaEjecucion(e.id, e.estado === 'ok' ? '4' : undefined, true).catch(avisarError);
+          if (e.estado === 'ok' && (antes === 'corriendo' || antes === 'esperando')) aviso(`${estado.w.reporte.nombre}: terminó bien. Ya podés revisar los resultados.`, 'ok');
+          enSilencio(() => vistaEjecucion(e.id, e.estado === 'ok' ? '4' : undefined, true));
         }
-      } else if (estado.vista && ['inicio', 'cierre', 'historial', 'facturas'].includes(estado.vista.nombre)) enrutar();
+      } else if (estado.vista && ['inicio', 'cierre', 'historial', 'facturas'].includes(estado.vista.nombre)) enSilencio(enrutar);
     });
-    f.addEventListener('cierre', () => { if (estado.vista && estado.vista.nombre === 'inicio') enrutar(); });
+    f.addEventListener('cierre', () => { if (estado.vista && estado.vista.nombre === 'inicio') enSilencio(enrutar); });
     f.onerror = () => { setTimeout(() => { if (estado.fuente === f) conectarEventos(); }, 5000); };
   }
-  async function actualizarIndicador() {
+  // Redibujo que no pidió el usuario (llegó un evento): sin las animaciones de entrada, para que no parpadee.
+  async function enSilencio(fn) {
+    const v = $('#vista');
+    v.classList.add('quieta');
+    try { await fn(); } catch (err) { avisarError(err); }
+    finally { setTimeout(() => v.classList.remove('quieta'), 120); }
+  }
+  // La herramienta se actualizó con la pantalla abierta: el código nuevo recién corre al cerrarla y abrirla.
+  async function revisarVersion() {
     try {
-      const activos = (await api('GET', '/api/trabajos')).filter(t => t.estado === 'corriendo' || t.estado === 'esperando');
-      const ind = $('#indicador');
-      ind.classList.toggle('oculto', activos.length === 0);
-      if (activos.length) {
-        const espera = activos.some(t => t.estado === 'esperando');
-        ind.classList.toggle('espera', espera);
-        $('#indicador-texto').textContent = espera ? 'Un reporte espera tu acción' : activos.length === 1 ? 'Un reporte corriendo' : `${activos.length} reportes corriendo`;
-        ind.href = `#/ejecucion/${encodeURIComponent((activos.find(t => t.estado === 'esperando') || activos[0]).ejecucionId)}/3`;
-      }
-    } catch (e) { /* informativo */ }
+      const st = await api('GET', '/api/estado', undefined, { silencioso: true });
+      $('#banda-version').classList.toggle('oculto', !st.reiniciar);
+      return st;
+    } catch (err) { return null; }
   }
 
   // ---------------------------------------------------------------- piezas comunes
@@ -576,7 +826,7 @@
     importar.addEventListener('change', async () => {
       const f = importar.files[0];
       if (!f) return;
-      try { const c = await api('POST', '/api/cierres/importar', f, { crudo: true, cabeceras: { 'Content-Type': 'application/zip' } }); aviso(`Se importó el cierre de ${periodoLargo(c.periodo)} (sólo para ver).`, 'ok'); enrutar(); } catch (e) { avisarError(e); }
+      try { const c = await tareas.correr({ clave: 'importar:' + f.name, titulo: `Importando ${f.name}` }, async () => api('POST', '/api/cierres/importar', f, { crudo: true, cabeceras: { 'Content-Type': 'application/zip' } })); if (!c) return; aviso(`Se importó el cierre de ${periodoLargo(c.periodo)} (sólo para ver).`, 'ok'); enrutar(); } catch (e) { avisarError(e); }
       importar.value = '';
     });
     if (!enCurso) {
@@ -658,8 +908,8 @@
     };
     const acciones = [
       { icono: 'i-lapiz', texto: 'Editar fecha de corte y notas', onclick: editar },
-      { icono: 'i-caja', texto: 'Exportar el cierre', detalle: 'Un archivo para compartirlo con otra persona', onclick: () => { location.href = `/api/cierres/${encodeURIComponent(c.id)}/exportar`; } },
-      { icono: c.cerrado ? 'i-deshacer' : 'i-bandera', texto: c.cerrado ? 'Reabrir el cierre' : 'Marcar el cierre como completo', onclick: async () => { try { await api('PATCH', '/api/cierres/' + encodeURIComponent(c.id), { cerrado: !c.cerrado }); if (!c.cerrado) { fiesta(); aviso(`Cierre de ${periodoLargo(c.periodo)} completo.`, 'ok'); } enrutar(); } catch (e) { avisarError(e); } } },
+      { icono: 'i-caja', texto: 'Exportar el cierre', detalle: 'Un archivo para compartirlo con otra persona', onclick: () => exportarCierre(c) },
+      { icono: c.cerrado ? 'i-deshacer' : 'i-bandera', texto: c.cerrado ? 'Reabrir el cierre' : 'Marcar el cierre como completo', onclick: async () => { try { await api('PATCH', '/api/cierres/' + encodeURIComponent(c.id), { cerrado: !c.cerrado }); if (!c.cerrado) { aviso(`Cierre de ${periodoLargo(c.periodo)} completo.`, 'ok'); } enrutar(); } catch (e) { avisarError(e); } } },
       'sep',
       { icono: 'i-basura', texto: 'Borrar el cierre', peligro: true, onclick: async () => {
         const tieneFinal = Object.values(c.reportes).some(r => r.final);
@@ -756,6 +1006,25 @@
   }
 
   // ---------------------------------------------------------------- vista: ejecución (asistente)
+  function soltarCabecera() {
+    if (estado.alScroll) { window.removeEventListener('scroll', estado.alScroll); estado.alScroll = null; }
+    if (estado.observaCabecera) { estado.observaCabecera.disconnect(); estado.observaCabecera = null; }
+    document.documentElement.style.removeProperty('--alto-cabecera');
+  }
+  // El encabezado del reporte (migas, título y pasos) queda fijo arriba; al bajar se achica para dejar lugar a la tabla.
+  function fijarCabecera(cabecera) {
+    soltarCabecera();
+    let compacta = false;
+    estado.alScroll = () => {
+      const y = window.scrollY;
+      const nueva = compacta ? y > 8 : (y > 60 && document.documentElement.scrollHeight - window.innerHeight > 220);
+      if (nueva !== compacta) { compacta = nueva; cabecera.classList.toggle('compacta', compacta); }
+    };
+    window.addEventListener('scroll', estado.alScroll, { passive: true });
+    estado.observaCabecera = new ResizeObserver(() => document.documentElement.style.setProperty('--alto-cabecera', cabecera.offsetHeight + 'px'));
+    estado.observaCabecera.observe(cabecera);
+    estado.alScroll();
+  }
   async function vistaEjecucion(id, pasoPedido, refresco = false) {
     const sello = nuevoSello();
     detenerSondeo();
@@ -766,7 +1035,7 @@
     const reporte = estado.app.reportes.find(r => r.codigo === e.reporte);
     const previo = estado.w && estado.w.e && estado.w.e.id === e.id ? estado.w : null;
     const w = { e, reporte, cierre, paso: 1, tablas: null, tabla: previo ? previo.tabla : null,
-      grilla: previo ? previo.grilla : { desde: 0, cantidad: 100, orden: null, desc: false, filtro: '', estado: '', columna: '', seleccion: new Set() },
+      grilla: previo ? previo.grilla : null,
       valores: previo ? previo.valores : null, trabajo: null };
     estado.w = w;
     const terminal = ['ok', 'error', 'cancelado'].includes(e.estado);
@@ -779,9 +1048,11 @@
     const main = limpiar($('#vista'));
     const esHerramienta = !!cierre.herramienta;
     const volver = esHerramienta ? '#/facturas' : '#/cierre/' + encodeURIComponent(cierre.id);
-    main.appendChild(el('div', { class: 'migas' }, esHerramienta ? el('a', { href: '#/facturas' }, 'Facturas') : [el('a', { href: '#/inicio' }, 'Cierres'), icono('i-der'), el('a', { href: volver }, periodoLargo(cierre.periodo))],
+    const cabecera = el('div', { class: 'cabecera-fija' });
+    main.appendChild(cabecera);
+    cabecera.appendChild(el('div', { class: 'migas' }, esHerramienta ? el('a', { href: '#/facturas' }, 'Facturas') : [el('a', { href: '#/inicio' }, 'Cierres'), icono('i-der'), el('a', { href: volver }, periodoLargo(cierre.periodo))],
       icono('i-der'), el('span', null, `${reporte.nombre}, versión ${e.version}`)));
-    main.appendChild(el('div', { class: 'cabecera-reporte' }, tileReporte(reporte, 'grande'),
+    cabecera.appendChild(el('div', { class: 'cabecera-reporte' }, tileReporte(reporte, 'grande'),
       el('div', { class: 'titulos' }, el('h1', null, reporte.nombre),
         el('div', { class: 'meta' }, chipEstado(e), el('span', { class: 'chip borde' }, `Versión ${e.version}`), esHerramienta ? null : el('span', { class: 'chip borde' }, icono('i-calendario'), periodoLargo(cierre.periodo)), e.final ? el('span', { class: 'chip acento' }, icono('i-bandera'), 'Resultado final') : null)),
       el('div', { class: 'acciones-fila' }, el('button', { type: 'button', class: 'boton-ayuda-paso', onclick: () => abrirAyuda(PASOS[paso - 1].ayuda) }, icono('i-ayuda'), '¿Cómo sigo?'), enlace('Volver', volver, 'btn fantasma', 'i-volver'))));
@@ -794,7 +1065,8 @@
         onclick: habilitado ? () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/${num}`; } : null },
         el('span', { class: 'bola' }, icono(hecho ? 'i-check' : p.icono)), el('span', { class: 'nombre-paso' }, p.nombre)));
     });
-    main.appendChild(pasos);
+    cabecera.appendChild(pasos);
+    fijarCabecera(cabecera);
     const contenido = el('section', { class: 'tarjeta panel-paso' });
     main.appendChild(contenido);
     await ({ 1: pasoArchivos, 2: pasoOpciones, 3: pasoEjecucion, 4: pasoResultados, 5: pasoExportar }[paso])(contenido, w);
@@ -823,22 +1095,41 @@
     for (const ent of reporte.entradas) seleccion[ent.clave] = new Set((e.entradas || {})[ent.clave] || []);
     const recienSubidos = new Set();
     cont.appendChild(intro('i-subir', editable ? 'Elegí los Excel descargados de los sistemas. Si un reporte vino cortado en dos o más archivos, agregalos todos: se leen seguidos, como uno solo.' : 'Estos son los archivos que usó esta versión.'));
-    const bloques = el('div');
+    const bloques = el('div', { class: 'bloques-entradas' });
     const pie = el('div', { class: 'pie-paso' });
     cont.append(bloques, pie);
     const recargar = async () => { cierre = w.cierre = await api('GET', '/api/cierres/' + encodeURIComponent(cierre.id)); pintar(); };
+    // Quita un archivo del cierre: se borra la copia de la herramienta, nunca el original de la PC.
+    const quitarArchivo = async a => {
+      if (!await confirmar(`¿Quitar ${a.nombre}?`, 'Se borra la copia guardada en la herramienta; el archivo original de tu PC no se toca. Si lo usa alguna versión de este cierre, no se puede quitar.', 'Quitar', 'peligro')) return;
+      try {
+        await api('DELETE', `/api/cierres/${encodeURIComponent(cierre.id)}/archivos/${encodeURIComponent(a.id)}`);
+        for (const s of Object.values(seleccion)) s.delete(a.id);
+        recienSubidos.delete(a.id);
+        aviso(`Se quitó ${a.nombre} del cierre.`, 'ok', 3000);
+        await recargar();
+      } catch (err) { avisarError(err); }
+    };
+    const botonQuitar = a => el('button', { type: 'button', class: 'btn fantasma icono chico quitar-archivo', title: 'Quitar del cierre', 'aria-label': 'Quitar ' + a.nombre,
+      onclick: ev => { ev.preventDefault(); ev.stopPropagation(); quitarArchivo(a); } }, icono('i-basura'));
     const subir = async (ent, archivos, barra) => {
       for (const f of archivos) {
+        const clave = `subida:${cierre.id}:${f.name}:${f.size}`;
+        if (tareas.enCurso(clave)) { aviso(`${f.name} ya se está subiendo; lo ves en Tareas.`, 'info'); continue; }
+        const tarea = tareas.iniciar({ clave, titulo: `Subiendo ${f.name}`, detalle: bytesLegibles(f.size), progreso: 0 });
         barra.classList.remove('oculto');
         progresoGlobal(1);
         try {
-          const a = await subirArchivo(cierre.id, f, p => { barra.firstChild.style.width = Math.round(p * 100) + '%'; });
+          const a = await subirArchivo(cierre.id, f, p => {
+            barra.firstChild.style.width = Math.round(p * 100) + '%';
+            if (p >= 1) tarea.avance(null, 'Reconociendo qué reporte es…'); else tarea.avance(p, `${Math.round(p * 100)}% de ${bytesLegibles(f.size)}`);
+          });
+          tarea.terminar(a.tipo ? `Reconocí ${tituloTipo(a.tipo)}` + (a.filas != null ? `, ${n(a.filas)} filas.` : '.') : (a.error || 'No reconocí qué reporte es.'), a.tipo ? 'ok' : 'error');
           recienSubidos.add(a.id);
-          if (a.tipo === ent.tipo) { seleccion[ent.clave].add(a.id); aviso(`${a.nombre}: reconocí ${tituloTipo(a.tipo)}` + (a.filas != null ? `, ${n(a.filas)} filas.` : '.'), 'ok'); }
+          if (a.tipo === ent.tipo) seleccion[ent.clave].add(a.id);
           else if (a.tipo) aviso(`${a.nombre}: reconocí ${tituloTipo(a.tipo)}, que no es lo que pide esta entrada. Quedó guardado en el cierre por si lo necesitás en otro reporte.`, 'atencion', 9000);
-          else aviso(`${a.nombre}: ${a.error || 'no reconocí qué reporte es'}.`, 'error', 9000);
           if (a.aviso) aviso(a.aviso, 'atencion', 12000);
-        } catch (err) { avisarError(err); }
+        } catch (err) { tarea.terminar(err.message, 'error'); avisarError(err); }
         finally { progresoGlobal(-1); barra.classList.add('oculto'); barra.firstChild.style.width = '0'; }
       }
       await recargar();
@@ -858,7 +1149,9 @@
             if (!nombres.length) return;
             try {
               progresoGlobal(1);
-              const agregados = await api('POST', `/api/cierres/${encodeURIComponent(cierre.id)}/archivos/desde-carpeta`, { ruta, nombres });
+              const agregados = await tareas.correr({ clave: `carpeta:${cierre.id}:${ruta}`, titulo: `Copiando ${nombres.length === 1 ? 'un archivo' : nombres.length + ' archivos'} de la carpeta`, detalle: 'Se copian y se reconocen; los originales no se tocan.' },
+                async () => api('POST', `/api/cierres/${encodeURIComponent(cierre.id)}/archivos/desde-carpeta`, { ruta, nombres }));
+              if (!agregados) return;
               for (const a of agregados) { recienSubidos.add(a.id); if (a.tipo === ent.tipo) seleccion[ent.clave].add(a.id); else aviso(`${a.nombre}: ${a.tipo ? 'reconocí ' + tituloTipo(a.tipo) + ', que no es lo que pide esta entrada' : (a.error || 'no reconocí qué reporte es')}.`, 'atencion', 9000); if (a.aviso) aviso(a.aviso, 'atencion', 12000); }
               await recargar();
             } catch (err) { avisarError(err); } finally { progresoGlobal(-1); }
@@ -873,31 +1166,49 @@
         const listo = sel.size >= min;
         const bloque = el('div', { class: 'bloque-entrada' });
         bloque.appendChild(el('div', { class: 'titulo' }, el('h3', null, ent.titulo), listo ? el('span', { class: 'chip ok late' }, icono('i-check'), sel.size === 1 ? 'Listo' : `${sel.size} tramos`) : el('span', { class: 'chip warn' }, icono('i-alerta'), 'Falta elegirlo')));
-        if (ent.ayuda) bloque.appendChild(el('div', { class: 'ayuda' }, ent.ayuda));
-        const candidatos = cierre.archivos.filter(a => a.tipo === ent.tipo || sel.has(a.id));
+        bloque.appendChild(el('div', { class: 'ayuda' }, ent.ayuda || ''));
+        const listaArchivos = el('div', { class: 'lista-archivos' });
+        bloque.appendChild(listaArchivos);
+        // En una versión que ya corrió se ven sólo los archivos que usó; si no, también los del cierre que sirven acá.
+        const candidatos = cierre.archivos.filter(a => editable ? a.tipo === ent.tipo || sel.has(a.id) : sel.has(a.id));
         for (const a of candidatos) {
           const detalle = [a.hoja ? `hoja ${a.hoja}` : null, a.filas != null ? `${n(a.filas)} filas` : null, bytesLegibles(a.bytes), 'agregado ' + fechaCorta(a.subido)].filter(Boolean).join(' · ');
           const casilla = el('input', { type: 'checkbox', checked: sel.has(a.id), disabled: !editable, 'aria-label': 'Usar ' + a.nombre, onchange: ev => { if (ev.target.checked) sel.add(a.id); else sel.delete(a.id); pintar(); } });
-          bloque.appendChild(el('label', { class: 'archivo' + (sel.has(a.id) ? ' elegido' : '') + (recienSubidos.has(a.id) ? ' nuevo' : '') }, casilla, el('span', { class: 'icono-archivo' }, icono('i-planilla')),
-            el('span', { class: 'datos' }, el('span', { class: 'nombre' }, a.nombre), el('span', { class: 'detalle' }, detalle), a.aviso ? el('span', { class: 'detalle aviso' }, a.aviso) : null)));
+          listaArchivos.appendChild(el('label', { class: 'archivo' + (sel.has(a.id) ? ' elegido' : '') + (recienSubidos.has(a.id) ? ' nuevo' : '') }, casilla, el('span', { class: 'icono-archivo' }, icono('i-planilla')),
+            el('span', { class: 'datos' }, el('span', { class: 'nombre' }, a.nombre), el('span', { class: 'detalle' }, detalle), a.aviso ? el('span', { class: 'detalle advertencia' }, a.aviso) : null),
+            editable ? botonQuitar(a) : null));
         }
         if (editable) {
           for (const a of cierre.archivos.filter(x => !x.tipo && recienSubidos.has(x.id))) {
-            bloque.appendChild(el('div', { class: 'archivo problema' }, el('span', { class: 'icono-archivo' }, icono('i-alerta')), el('span', { class: 'datos' }, el('span', { class: 'nombre' }, a.nombre), el('span', { class: 'detalle error' }, a.error ? `No se pudo leer: ${a.error}` : 'No reconocí qué reporte es. Revisá que sea el Excel original descargado del sistema.')),
+            listaArchivos.appendChild(el('div', { class: 'archivo problema' }, el('span', { class: 'icono-archivo' }, icono('i-alerta')), el('span', { class: 'datos' }, el('span', { class: 'nombre' }, a.nombre), el('span', { class: 'detalle error' }, a.error ? `No se pudo leer: ${a.error}` : 'No reconocí qué reporte es. Revisá que sea el Excel original descargado del sistema.')),
               btn('Quitar', async () => { try { await api('DELETE', `/api/cierres/${encodeURIComponent(cierre.id)}/archivos/${encodeURIComponent(a.id)}`); recienSubidos.delete(a.id); await recargar(); } catch (err) { avisarError(err); } }, 'fantasma chico', { icono: 'i-basura' })));
           }
           const input = el('input', { type: 'file', multiple: true, accept: '.xlsx,.xlsm', 'aria-label': 'Elegir archivos para ' + ent.titulo });
           const barra = el('div', { class: 'barra-subida oculto' }, el('div', { style: 'width:0' }));
-          const zona = el('div', { class: 'zona-soltar' }, el('span', { class: 'icono-subir' }, icono('i-subir')),
-            el('div', { class: 'texto' }, el('b', null, candidatos.length ? 'Agregar otro archivo o tramo' : 'Arrastrá acá el Excel descargado'), el('span', null, 'o elegilo desde la PC')),
-            btn('Elegir archivos', () => input.click(), 'chico', { icono: 'i-archivo' }), btn('Tomar de una carpeta', () => desdeCarpeta(ent), 'fantasma chico', { icono: 'i-carpeta' }), input);
+          const zona = el('div', { class: 'zona-soltar' },
+            el('div', { class: 'zona-fila' }, el('span', { class: 'icono-subir' }, icono('i-subir')),
+              el('div', { class: 'texto' }, el('b', null, candidatos.length ? 'Agregar otro archivo o tramo' : 'Agregar el archivo'), el('span', null, 'Arrastralo acá o elegilo desde la PC'))),
+            el('div', { class: 'zona-botones' }, btn('Elegir archivos', () => input.click(), 'chico', { icono: 'i-archivo' }), btn('Desde una carpeta', () => desdeCarpeta(ent), 'fantasma chico', { icono: 'i-carpeta' })), input);
           input.addEventListener('change', () => subir(ent, [...input.files], barra));
           zona.addEventListener('dragover', ev => { ev.preventDefault(); zona.classList.add('sobre'); });
           zona.addEventListener('dragleave', () => zona.classList.remove('sobre'));
           zona.addEventListener('drop', ev => { ev.preventDefault(); zona.classList.remove('sobre'); subir(ent, [...ev.dataTransfer.files], barra); });
           bloque.append(zona, barra);
         }
+        if (!listaArchivos.children.length) {
+          listaArchivos.appendChild(el('div', { class: 'archivo vacio' }, el('span', { class: 'icono-archivo' }, icono('i-archivo')),
+            el('span', { class: 'datos' }, el('span', { class: 'nombre' }, editable ? 'Todavía no hay archivo' : 'Sin archivo'), el('span', { class: 'detalle' }, editable ? 'Agregalo con el recuadro de abajo.' : 'Esta versión no usó archivos acá.'))));
+        }
         bloques.appendChild(bloque);
+      }
+      // Archivos del cierre que no son de ningún reporte conocido (por ejemplo, un Excel exportado): se pueden quitar.
+      const sueltos = editable ? cierre.archivos.filter(a => !a.tipo && !recienSubidos.has(a.id)) : [];
+      if (sueltos.length) {
+        bloques.appendChild(el('details', { class: 'avanzadas archivos-sueltos' },
+          el('summary', null, icono('i-alerta'), el('span', null, `Archivos del cierre que no reconocí (${sueltos.length}) `, el('span', { class: 'muted' }, 'no sirven para ningún reporte; podés quitarlos')), icono('i-abajo', 'flecha')),
+          el('div', { class: 'contenido' }, sueltos.map(a => el('div', { class: 'archivo problema' }, el('span', { class: 'icono-archivo' }, icono('i-alerta')),
+            el('span', { class: 'datos' }, el('span', { class: 'nombre' }, a.nombre), el('span', { class: 'detalle' }, [bytesLegibles(a.bytes), 'agregado ' + fechaCorta(a.subido)].join(' · '))),
+            btn('Quitar', () => quitarArchivo(a), 'fantasma chico', { icono: 'i-basura' }))))));
       }
       const completo = reporte.entradas.every(ent => seleccion[ent.clave].size >= (ent.minimo || 1));
       limpiar(pie);
@@ -987,8 +1298,10 @@
   }
   function campoParametro(p, valores, editable, propuestas) {
     const id = 'par-' + p.clave;
-    const ancho = p.tipo === 'tabla' || p.tipo === 'lista' || p.tipo === 'opcion';
-    const campo = el('div', { class: 'campo' + (ancho ? ' ancho' : '') });
+    // Las opciones de pocas alternativas y las rutas ocupan dos columnas; las listas y tablas, el ancho entero.
+    const ancho = p.tipo === 'tabla' || p.tipo === 'lista' || (p.tipo === 'opcion' && (p.opciones || []).length > 3);
+    const doble = !ancho && (p.tipo === 'opcion' || p.tipo === 'ruta');
+    const campo = el('div', { class: 'campo' + (ancho ? ' ancho' : doble ? ' doble' : '') });
     const v = valores[p.clave];
     const fijar = x => { valores[p.clave] = x; };
     const rotulo = texto => el('div', { class: 'rotulo' }, texto + (p.obligatorio ? ' *' : ''));
@@ -1094,7 +1407,7 @@
     pintarTrabajo(t);
     if (t.estado === 'corriendo' || t.estado === 'esperando') {
       estado.sondeo = setInterval(async () => {
-        try { const t2 = await api('GET', '/api/trabajos/' + e.trabajoId); pintarTrabajo(t2); if (!(t2.estado === 'corriendo' || t2.estado === 'esperando')) detenerSondeo(); } catch (err) { /* próxima vuelta */ }
+        try { const t2 = await api('GET', '/api/trabajos/' + e.trabajoId, undefined, { silencioso: true }); pintarTrabajo(t2); if (!(t2.estado === 'corriendo' || t2.estado === 'esperando')) detenerSondeo(); } catch (err) { /* próxima vuelta */ }
       }, 1500);
     }
   }
@@ -1103,7 +1416,8 @@
     if (!w || !w.nodos || w.paso !== 3) return;
     const anterior = w.trabajo;
     w.trabajo = t;
-    const { iconoEstado, titulo, pasoActual, pista, porcentaje, zonaEspera, lineaTiempo, consola, pie } = w.nodos;
+    const nodos = w.nodos;
+    const { iconoEstado, titulo, pasoActual, pista, porcentaje, zonaEspera, lineaTiempo, consola, pie } = nodos;
     const activo = t.estado === 'corriendo' || t.estado === 'esperando';
     const cambioEstado = !anterior || anterior.estado !== t.estado;
     if (cambioEstado) {
@@ -1111,37 +1425,66 @@
       iconoEstado.className = 'icono-estado ' + ({ corriendo: 'girando', esperando: 'espera', ok: 'ok', error: 'error', interrumpido: 'error' }[t.estado] || '');
       limpiar(iconoEstado).appendChild(icono(ic));
     }
-    titulo.textContent = { ok: 'Terminó bien', error: 'Terminó con un error', cancelado: 'Se canceló', interrumpido: 'Se interrumpió', esperando: 'Necesita una acción tuya' }[t.estado] || 'Corriendo…';
-    pasoActual.textContent = activo ? (t.paso && t.paso !== 'Arrancando' ? t.paso : 'Preparando…') : t.estado === 'ok' ? 'Los resultados ya están listos para revisar.' : '';
+    ponerTexto(titulo, { ok: 'Terminó bien', error: 'Terminó con un error', cancelado: 'Se canceló', interrumpido: 'Se interrumpió', esperando: 'Necesita una acción tuya' }[t.estado] || 'Corriendo…');
+    ponerTexto(pasoActual, activo ? (t.paso && t.paso !== 'Arrancando' ? t.paso : 'Preparando…') : t.estado === 'ok' ? 'Los resultados ya están listos para revisar.' : '');
     pista.parentElement.classList.toggle('oculto', !activo && t.estado !== 'ok');
     pista.classList.toggle('indeterminada', activo && !(t.progreso > 0));
-    pista.firstChild.style.width = Math.round((t.estado === 'ok' ? 1 : (t.progreso || 0)) * 100) + '%';
-    porcentaje.textContent = t.estado === 'ok' ? '100%' : t.progreso > 0 ? Math.round(t.progreso * 100) + '%' : '';
+    const ancho = Math.round((t.estado === 'ok' ? 1 : (t.progreso || 0)) * 100) + '%';
+    if (pista.firstChild.style.width !== ancho) pista.firstChild.style.width = ancho;
+    ponerTexto(porcentaje, t.estado === 'ok' ? '100%' : t.progreso > 0 ? Math.round(t.progreso * 100) + '%' : '');
+    // Línea de tiempo: los pasos que ya están quedan como están; sólo entran los nuevos (con su animación).
     const lineas = t.lineas || [];
     const pasos = [...new Set(lineas.filter(l => l.startsWith('== ')).map(l => l.slice(3)))];
-    limpiar(lineaTiempo);
+    const items = lineaTiempo.children;
     pasos.forEach((p, i) => {
       const actual = activo && i === pasos.length - 1;
-      lineaTiempo.appendChild(el('li', { class: actual ? 'actual' : 'hecho', style: `animation-delay:${Math.min(i, 6) * .04}s` }, el('span', { class: 'marca-paso' }, actual ? null : icono('i-check')), el('span', null, p)));
+      let li = items[i];
+      if (!li || li.dataset.paso !== p) {
+        while (items.length > i) lineaTiempo.lastChild.remove();
+        li = el('li', { 'data-paso': p }, el('span', { class: 'marca-paso' }), el('span', null, p));
+        lineaTiempo.appendChild(li);
+      }
+      const clase = actual ? 'actual' : 'hecho';
+      if (li.className !== clase) {
+        li.className = clase;
+        limpiar(li.firstChild);
+        if (!actual) li.firstChild.appendChild(icono('i-check'));
+      }
     });
-    limpiar(consola);
-    lineas.slice(-400).forEach((l, i, a) => consola.appendChild(el('div', { class: i === a.length - 1 ? 'ultima' : '' }, l)));
-    if (t.error) consola.appendChild(el('div', { class: 'ultima' }, t.error));
-    consola.scrollTop = consola.scrollHeight;
-    limpiar(zonaEspera);
-    if (t.estado === 'esperando' && t.espera) {
-      zonaEspera.appendChild(el('div', { class: 'caja-espera' }, icono('i-mano', 'xg'), el('p', null, t.espera.mensaje),
-        btn(t.espera.boton || 'Continuar', async ev => { const b = ev.currentTarget; b.disabled = true; try { await api('POST', `/api/trabajos/${t.id}/continuar`, { espera: t.espera.id }); } catch (err) { avisarError(err); b.disabled = false; } }, 'primario grande', { icono: 'i-play' })));
-    } else if ((t.estado === 'error' || t.estado === 'interrumpido') && t.error) {
-      zonaEspera.appendChild(el('div', { class: 'caja-error' }, icono('i-alerta'), el('div', null, el('p', null, el('b', null, 'Qué pasó: '), t.error), el('p', { class: 'muted' }, 'Corregí lo que indica el mensaje y volvé a correr. Si no se entiende, copiá el detalle técnico para pedir ayuda.'))));
-    } else if (t.estado === 'ok') {
-      const tablas = Object.entries(t.tablas || {});
-      zonaEspera.appendChild(el('div', { class: 'caja-ok' }, icono('i-check-circulo'), el('p', null, tablas.length ? `Se generaron ${tablas.length === 1 ? 'una tabla' : tablas.length + ' tablas'} con ${n(tablas.reduce((s, [, f]) => s + f, 0))} filas para revisar.` : 'El reporte terminó.')));
+    while (items.length > pasos.length) lineaTiempo.lastChild.remove();
+    // Detalle técnico: se agregan sólo las líneas nuevas.
+    const mostradas = nodos.lineas || [];
+    const continua = mostradas.length > 0 && lineas.length >= mostradas.length && lineas[0] === mostradas[0] && lineas[mostradas.length - 1] === mostradas[mostradas.length - 1];
+    const abajo = consola.scrollHeight - consola.scrollTop - consola.clientHeight < 30;
+    if (!continua) limpiar(consola);
+    for (const l of (continua ? lineas.slice(mostradas.length) : lineas.slice(-400))) consola.appendChild(el('div', null, l));
+    while (consola.children.length > 400) consola.firstChild.remove();
+    if (t.error && nodos.errorMostrado !== t.error) { nodos.errorMostrado = t.error; consola.appendChild(el('div', null, t.error)); }
+    const ultima = consola.querySelector('.ultima');
+    if (ultima !== consola.lastChild) { if (ultima) ultima.classList.remove('ultima'); if (consola.lastChild) consola.lastChild.classList.add('ultima'); }
+    if (abajo || !continua) consola.scrollTop = consola.scrollHeight;
+    nodos.lineas = lineas.slice();
+    // Caja de espera, error u ok: sólo cuando cambia el estado (o la espera).
+    const claveZona = `${t.estado}|${t.espera ? t.espera.id : ''}|${t.error || ''}`;
+    if (nodos.claveZona !== claveZona) {
+      nodos.claveZona = claveZona;
+      limpiar(zonaEspera);
+      if (t.estado === 'esperando' && t.espera) {
+        zonaEspera.appendChild(el('div', { class: 'caja-espera' }, icono('i-mano', 'xg'), el('p', null, t.espera.mensaje),
+          btn(t.espera.boton || 'Continuar', async () => { try { await api('POST', `/api/trabajos/${t.id}/continuar`, { espera: t.espera.id }); } catch (err) { avisarError(err); } }, 'primario grande', { icono: 'i-play' })));
+      } else if ((t.estado === 'error' || t.estado === 'interrumpido') && t.error) {
+        zonaEspera.appendChild(el('div', { class: 'caja-error' }, icono('i-alerta'), el('div', null, el('p', null, el('b', null, 'Qué pasó: '), t.error), el('p', { class: 'muted' }, 'Corregí lo que indica el mensaje y volvé a correr. Si no se entiende, copiá el detalle técnico para pedir ayuda.'))));
+      } else if (t.estado === 'ok') {
+        const tablas = Object.entries(t.tablas || {});
+        zonaEspera.appendChild(el('div', { class: 'caja-ok' }, icono('i-check-circulo'), el('p', null, tablas.length ? `Se generaron ${tablas.length === 1 ? 'una tabla' : tablas.length + ' tablas'} con ${n(tablas.reduce((s, [, f]) => s + f, 0))} filas para revisar.` : 'El reporte terminó.')));
+      }
     }
+    if (!cambioEstado && nodos.pieListo) return;
+    nodos.pieListo = true;
     limpiar(pie);
     const e = w.e;
     if (activo) {
-      pie.append(el('div', { class: 'izq' }, el('span', { class: 'muted' }, 'Podés cerrar esta pestaña: el reporte sigue corriendo.')),
+      pie.append(el('div', { class: 'izq' }, el('span', { class: 'muted' }, 'Podés cerrar esta pestaña o seguir con otra cosa: el reporte sigue corriendo y lo ves en Tareas.')),
         el('div', { class: 'der' }, btn('Cancelar', async () => { if (await confirmar('¿Cancelar el reporte?', 'Se corta esta corrida. Tus archivos no se tocan y podés volver a correrlo cuando quieras.', 'Cancelar el reporte', 'peligro')) { try { await api('POST', `/api/trabajos/${t.id}/cancelar`, {}); } catch (err) { avisarError(err); } } }, 'peligro', { icono: 'i-detener' })));
     } else if (t.estado === 'ok') {
       pie.append(el('div', { class: 'izq' }), el('div', { class: 'der' }, btn('Revisar los resultados', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/4`; }, 'primario grande llama', { icono: 'i-tabla' })));
@@ -1153,13 +1496,229 @@
   }
 
   // paso 4
+  // Filtros de revisión de la grilla. "Para revisar" sólo existe en las tablas con regla (por ejemplo, Resultado distinto
+  // de COINCIDE): son las filas que cuentan en el medidor, en cualquier estado.
+  const ESTADOS_GRILLA = [['revisar', 'Para revisar'], ['', 'Todas'], ['pendiente', 'Pendientes'], ['revisada', 'Revisadas'], ['omitida', 'Omitidas']];
+  function grillaInicial(t, cantidad) {
+    return { tabla: t ? t.tabla : null, desde: 0, cantidad: cantidad || 100, orden: null, desc: false, filtro: '', columna: '',
+      estado: t && t.revisar ? 'revisar' : '', filtros: {}, condiciones: {}, seleccion: new Set() };
+  }
+  // Consulta de la grilla para el servidor. `sin`: deja afuera el filtro de esa columna (la lista de valores de un
+  // filtro de encabezado se calcula con los demás filtros, como en Excel).
+  function consultaGrilla(g, sin = null) {
+    const q = new URLSearchParams({ filtro: g.filtro || '', columna: g.columna || '' });
+    if (g.estado === 'revisar') q.set('requiere', '1'); else if (g.estado) q.set('estado', g.estado);
+    if (g.orden) { q.set('orden', g.orden); q.set('desc', g.desc ? '1' : '0'); }
+    const filtros = { ...(g.filtros || {}) };
+    const condiciones = { ...(g.condiciones || {}) };
+    if (sin) { delete filtros[sin]; delete condiciones[sin]; }
+    if (Object.keys(filtros).length) q.set('filtros', JSON.stringify(filtros));
+    if (Object.keys(condiciones).length) q.set('condiciones', JSON.stringify(condiciones));
+    return q;
+  }
+  const importeLegible = x => Number(x).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  // Lee un importe escrito como en Excel: "-1.500,50", "1500.5", "3000000".
+  function leerImporte(texto) {
+    let t = String(texto || '').trim().replace(/\s/g, '');
+    if (!t) return null;
+    if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    const v = Number(t);
+    return Number.isFinite(v) ? v : null;
+  }
+
+  // Ventana del filtro de encabezado. Va en el body (posición fija) y se cierra al hacer clic afuera, con Escape,
+  // al desplazar la página o al cambiar de vista.
+  let popoverFiltro = null;
+  function cerrarPopoverFiltro() {
+    if (!popoverFiltro) return;
+    const p = popoverFiltro;
+    popoverFiltro = null;
+    document.removeEventListener('mousedown', p._fuera, true);
+    document.removeEventListener('keydown', p._esc, true);
+    window.removeEventListener('scroll', p._scroll, true);
+    window.removeEventListener('resize', p._scroll);
+    p.classList.add('saliendo');
+    setTimeout(() => p.remove(), 130);
+  }
+  function abrirPopoverFiltro(ancla, contenido, columna, etiqueta) {
+    cerrarPopoverFiltro();
+    const p = el('div', { class: 'popover-filtro', role: 'dialog', 'aria-label': etiqueta || 'Filtro de ' + columna }, contenido);
+    p.dataset.columna = columna;
+    p._fuera = ev => { if (!p.contains(ev.target) && !ev.target.closest('.boton-filtro, .en-buscador')) cerrarPopoverFiltro(); };
+    p._esc = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); cerrarPopoverFiltro(); } };
+    const abierto = Date.now();
+    p._scroll = ev => { if (Date.now() - abierto < 300) return; if (!ev || !ev.target || !(ev.target instanceof Node) || !p.contains(ev.target)) cerrarPopoverFiltro(); };
+    document.body.appendChild(p);
+    const reubicar = () => {
+      const r = ancla.getBoundingClientRect();
+      p.style.left = Math.max(8, Math.min(window.innerWidth - p.offsetWidth - 8, r.left)) + 'px';
+      let arriba = r.bottom + 6;
+      if (arriba + p.offsetHeight > window.innerHeight - 8) arriba = Math.max(8, Math.min(r.top - p.offsetHeight - 6, window.innerHeight - p.offsetHeight - 8));
+      p.style.top = arriba + 'px';
+    };
+    reubicar();
+    document.addEventListener('mousedown', p._fuera, true);
+    document.addEventListener('keydown', p._esc, true);
+    window.addEventListener('scroll', p._scroll, true);
+    window.addEventListener('resize', p._scroll);
+    popoverFiltro = p;
+    return { p, reubicar };
+  }
+  const OPERACIONES_NUMERO = [['distinto_cero', 'Distinto de cero'], ['igual', 'Igual a'], ['mayor', 'Mayor que'], ['menor', 'Menor que'], ['entre', 'Entre']];
+  const textoRegla = r => r ? `${r.columna} ${r.salvo.join(' o ')}` : '';
+
+  // Vista de columnas de una tabla: la guardada en Configuración, o la que propone el reporte (`vista` de la salida).
+  function vistaColumnas(w, info) {
+    const todas = info.columnas;
+    const guardada = (((estado.conf || {}).vistas || {})[w.reporte.codigo] || {})[info.tabla];
+    let orden, ocultas;
+    if (guardada) {
+      orden = guardada.orden.filter(c => todas.includes(c));
+      for (const c of todas) if (!orden.includes(c)) orden.push(c);
+      ocultas = new Set(guardada.ocultas.filter(c => todas.includes(c)));
+    } else {
+      const def = info.vista || {};
+      const primero = (def.primero || []).filter(c => todas.includes(c));
+      orden = [...primero, ...todas.filter(c => !primero.includes(c))];
+      ocultas = new Set((def.ocultas || []).filter(c => todas.includes(c)));
+    }
+    return { orden, ocultas, visibles: orden.filter(c => !ocultas.has(c)), personalizada: !!guardada };
+  }
+  async function guardarVista(w, info, vista) {
+    const valor = vista ? { orden: vista.orden, ocultas: [...vista.ocultas] } : null;
+    estado.conf = await api('PATCH', '/api/configuracion', { vistas: { [w.reporte.codigo]: { [info.tabla]: valor } } });
+  }
+  function configurarColumnas(w, info, alGuardar) {
+    const actual = vistaColumnas(w, info);
+    const orden = [...actual.orden];
+    const ocultas = new Set(actual.ocultas);
+    const lista = el('ul', { class: 'lista-columnas' });
+    const resumen = el('p', { class: 'muted', style: 'margin:0 0 10px' });
+    let arrastrada = null;
+    const cuenta = () => { resumen.textContent = `Se ven ${n(orden.length - ocultas.size)} de ${n(orden.length)} columnas. Arriba es más a la izquierda; arrastralas o usá las flechas.`; };
+    const mover = (desde, hasta) => {
+      if (hasta < 0 || hasta >= orden.length || desde === hasta) return;
+      const [c] = orden.splice(desde, 1);
+      orden.splice(hasta, 0, c);
+      pintar();
+      const fila = lista.children[hasta];
+      if (fila) { fila.classList.add('movida'); fila.scrollIntoView({ block: 'nearest' }); }
+    };
+    const pintar = () => {
+      limpiar(lista);
+      orden.forEach((c, i) => {
+        const casilla = el('input', { type: 'checkbox', checked: !ocultas.has(c), onchange: ev => { if (ev.target.checked) ocultas.delete(c); else ocultas.add(c); li.classList.toggle('oculta', !ev.target.checked); cuenta(); } });
+        const li = el('li', { draggable: 'true', class: ocultas.has(c) ? 'oculta' : '' },
+          el('span', { class: 'agarre', title: 'Arrastrá para mover' }, icono('i-agarrar')),
+          el('label', { class: 'casilla' }, casilla, el('span', null, c)),
+          el('span', { class: 'mover' },
+            btn('', () => mover(i, i - 1), 'fantasma icono chico', { icono: 'i-arriba', aria: `Mover ${c} a la izquierda`, title: 'Más a la izquierda', disabled: i === 0 }),
+            btn('', () => mover(i, i + 1), 'fantasma icono chico', { icono: 'i-abajo', aria: `Mover ${c} a la derecha`, title: 'Más a la derecha', disabled: i === orden.length - 1 })));
+        li.addEventListener('dragstart', ev => { arrastrada = i; li.classList.add('arrastrando'); ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', c); });
+        li.addEventListener('dragend', () => li.classList.remove('arrastrando'));
+        li.addEventListener('dragover', ev => { ev.preventDefault(); li.classList.add('destino'); });
+        li.addEventListener('dragleave', () => li.classList.remove('destino'));
+        li.addEventListener('drop', ev => { ev.preventDefault(); li.classList.remove('destino'); if (arrastrada !== null) mover(arrastrada, i); arrastrada = null; });
+        lista.appendChild(li);
+      });
+      cuenta();
+    };
+    const { cerrar } = abrirModal({ titulo: 'Columnas de la tabla', iconoNombre: 'i-columnas',
+      cuerpo: el('div', null, el('p', { style: 'margin-top:0' }, `Elegí qué columnas ver en "${info.titulo}" y en qué orden. La vista queda guardada para este reporte y Exportar puede usarla.`), resumen, lista),
+      pie: [btn('Restablecer', async () => { try { await guardarVista(w, info, null); cerrar(); aviso('Volvió la vista original de la tabla.', 'info', 3000); alGuardar(); } catch (err) { avisarError(err); } }, 'fantasma', { icono: 'i-deshacer', title: 'Volver a la vista que propone el reporte' }),
+        btn('Mostrar todas', () => { ocultas.clear(); pintar(); }, 'fantasma', { icono: 'i-ojo' }),
+        el('span', { style: 'flex:1' }),
+        btn('Cancelar', () => cerrar()),
+        btn('Guardar', async () => {
+          if (ocultas.size >= orden.length) { aviso('Dejá al menos una columna a la vista.', 'atencion'); return; }
+          try { await guardarVista(w, info, { orden, ocultas }); cerrar(); aviso('Vista guardada.', 'ok', 2500); alGuardar(); } catch (err) { avisarError(err); }
+        }, 'primario', { icono: 'i-check' })] });
+    pintar();
+  }
+
+  // Descarga con aviso de error en pantalla (no navega a una página de error) y la barra de carga arriba.
+  async function descargar(ruta, titulo = 'Descarga', detalle = 'Armando el archivo…') {
+    return tareas.correr({ clave: 'descarga:' + ruta, titulo, detalle }, async () => {
+      let r;
+      try { r = await fetch(ruta, { credentials: 'same-origin' }); } catch (e) { throw new Error('No se pudo hablar con la herramienta. Si la cerraste, volvé a abrirla desde su acceso directo.'); }
+      if (!r.ok) {
+        let mensaje = `Error ${r.status}`;
+        try { mensaje = (await r.json()).error || mensaje; } catch (e) { /* sin detalle */ }
+        const err = new Error(mensaje); err.status = r.status; throw err;
+      }
+      const blob = await r.blob();
+      const m = /filename\*=UTF-8''([^;]+)/i.exec(r.headers.get('Content-Disposition') || '');
+      const nombre = m ? decodeURIComponent(m[1]) : 'descarga.xlsx';
+      const url = URL.createObjectURL(blob);
+      const a = el('a', { href: url, download: nombre, style: 'display:none' });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return 'Descargado: ' + nombre;
+    }, `Ya se está armando: ${titulo}. Te aviso cuando esté; lo ves en Tareas.`);
+  }
+
+  // Excel de origen de una fila: la primera vez espera a que estén las copias de consulta de los Excel de entrada.
+  const origenPendiente = new Map();  // ejecución -> fila cuyo Excel de origen se baja apenas esté la copia
+  async function excelDeOrigen(e, tabla, fila, comprobante) {
+    const base = `/api/ejecuciones/${encodeURIComponent(e.id)}/origen`;
+    const bajar = () => descargar(`${base}?tabla=${encodeURIComponent(tabla)}&fila=${encodeURIComponent(fila)}`, `Excel de origen${comprobante ? ' de ' + comprobante : ''}`, 'Filas de SGA y ERP que forman la fila.');
+    try {
+      let st = await api('GET', base + '/estado');
+      if (!st.listo) {
+        if (!st.preparando) st = await api('POST', base + '/preparar', {});
+        if (st.error) { aviso(st.error, 'error', 9000); return; }
+        const espera = st.listo ? 'listo' : await esperarOrigen(base);
+        if (espera === 'error') return;
+        if (espera === 'seguir') {
+          origenPendiente.set(e.id, bajar);
+          aviso('Se sigue preparando. Cuando esté, el Excel se baja solo; el avance está en Tareas.', 'info', 6000);
+          return;
+        }
+      }
+      await bajar();
+    } catch (err) { avisarError(err); }
+  }
+  function esperarOrigen(base) {
+    return new Promise(resolve => {
+      const relleno = el('div');
+      const barra = el('div', { class: 'barra-progreso' }, relleno);
+      const texto = el('p', { class: 'muted', style: 'margin:8px 0 0' }, 'Empezando…');
+      let terminado = false;
+      let reloj = null;
+      const { cerrar } = abrirModal({ titulo: 'Preparando el Excel de origen', iconoNombre: 'i-planilla',
+        cuerpo: el('div', null, el('p', { style: 'margin-top:0' }, 'La primera vez, la herramienta pasa los Excel de entrada a un formato de consulta rápida. Tarda alrededor de un minuto por cada 60 MB. Después, cada Excel de origen sale al instante.'), barra, texto),
+        pie: [btn('Seguir trabajando', () => cerrar(), 'primario')],
+        alCerrar: () => { clearTimeout(reloj); if (!terminado) { terminado = true; resolve('seguir'); } } });
+      // 'listo': ya se puede bajar; 'seguir': el usuario siguió trabajando; 'error': no se pudo preparar.
+      const fin = r => { terminado = true; clearTimeout(reloj); cerrar(); resolve(r); };
+      const mirar = async () => {
+        try {
+          const st = await api('GET', base + '/estado');
+          if (st.listo) return fin('listo');
+          if (st.error) { fin('error'); aviso(st.error, 'error', 9000); return; }
+          const pct = Math.round((st.progreso || 0) * 100);
+          relleno.style.width = pct + '%';
+          texto.textContent = `${pct}% preparado`;
+        } catch (err) { fin('error'); avisarError(err); return; }
+        if (!terminado) reloj = setTimeout(mirar, 900);
+      };
+      mirar();
+    });
+  }
+
   async function pasoResultados(cont, w) {
     const { e } = w;
     const datos = await api('GET', `/api/ejecuciones/${encodeURIComponent(e.id)}/tablas`);
     w.tablas = datos.tablas;
     if (!datos.tablas.length) { cont.appendChild(intro('i-info', 'El reporte terminó pero no dejó tablas para revisar. Sus archivos están en el paso Exportar.')); return; }
     const revisables = () => w.tablas.filter(t => t.revisable !== false);
+    const elegir = t => { w.tabla = t.tabla; w.grilla = grillaInicial(t, w.grilla && w.grilla.cantidad); };
     if (!w.tabla || !datos.tablas.some(t => t.tabla === w.tabla)) w.tabla = (datos.tablas.find(t => t.principal) || revisables().find(t => t.estados.pendiente > 0) || datos.tablas[0]).tabla;
+    if (!w.grilla || w.grilla.tabla !== w.tabla) elegir(datos.tablas.find(t => t.tabla === w.tabla));
+    if (datos.tablas.some(t => t.origen)) api('POST', `/api/ejecuciones/${encodeURIComponent(e.id)}/origen/preparar`, {}).catch(() => {});
     const medidor = el('div', { class: 'tarjeta resumen-revision' });
     const pintarMedidor = () => {
       const tot = revisables().reduce((a, t) => ({ p: a.p + t.estados.pendiente, r: a.r + t.estados.revisada, o: a.o + t.estados.omitida }), { p: 0, r: 0, o: 0 });
@@ -1170,10 +1729,14 @@
           el('div', { class: 'acciones-fila' }, btn('Exportar', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/5`; }, 'chico', { icono: 'i-bajar' })));
         return tot;
       }
+      const sinRevisar = revisables().reduce((a, t) => a + Math.max(0, t.filas - (t.aRevisar == null ? t.filas : t.aRevisar)), 0);
+      const reglas = [...new Set(revisables().filter(t => t.revisar && t.filas > t.aRevisar).map(t => textoRegla(t.revisar)))];
       const pct = total ? Math.round((tot.r + tot.o) / total * 100) : 100;
       limpiar(medidor).append(el('div', { class: 'cifra' }, `${pct}%`, el('br'), el('small', null, 'revisado')),
-        el('div', { class: 'medidor' }, el('b', null, tot.p ? `Te faltan ${n(tot.p)} filas por revisar` : 'Revisaste todo'), barraRevision({ pendientes: tot.p, revisadas: tot.r, omitidas: tot.o }),
-          el('div', { class: 'leyenda-revision' }, el('span', null, el('b', null, n(tot.r)), ' revisadas'), el('span', null, el('b', null, n(tot.o)), ' omitidas'), el('span', null, el('b', null, n(tot.p)), ' pendientes'))),
+        el('div', { class: 'medidor' }, el('b', null, tot.p ? (tot.p === 1 ? 'Te falta una fila por revisar' : `Te faltan ${n(tot.p)} filas por revisar`) : 'Revisaste todo'),
+          barraRevision({ pendientes: tot.p, revisadas: tot.r, omitidas: tot.o }),
+          el('div', { class: 'leyenda-revision' }, el('span', null, el('b', null, n(tot.r)), ' revisadas'), el('span', null, el('b', null, n(tot.o)), ' omitidas'), el('span', null, el('b', null, n(tot.p)), ' pendientes')),
+          sinRevisar ? el('div', { class: 'nota-medidor' }, icono('i-check-circulo'), el('span', null, `${n(sinRevisar)} ${sinRevisar === 1 ? 'fila da' : 'filas dan'} ${reglas.join(' / ')} y no hace falta revisarlas. Están en la grilla con el filtro Todas.`)) : null),
         el('div', { class: 'acciones-fila' }, btn('Traer la revisión del cierre anterior', traerAnterior, 'fantasma chico', { icono: 'i-deshacer' }), btn('Exportar', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/5`; }, 'chico', { icono: 'i-bajar' })));
       return tot;
     };
@@ -1182,50 +1745,73 @@
       try { const r = await api('POST', `/api/ejecuciones/${encodeURIComponent(e.id)}/traer-revision-anterior`, {}); aviso(r.desde ? `Del cierre de ${periodoLargo(r.desde)}: ${n(r.aplicadas)} filas marcadas${r.sin_destino ? `, ${n(r.sin_destino)} sin fila en este mes` : ''}.` : 'No hay un cierre anterior con este reporte.', r.desde ? 'ok' : 'atencion'); await pasoResultados(limpiar(cont), w); } catch (err) { avisarError(err); }
     };
     cont.appendChild(intro('i-tabla', 'Marcá cada fila como revisada u omitida y anotá observaciones. Lo que marques se guarda solo y pasa a la próxima versión de este mes.'));
+    if (datos.tablas.some(t => t.anterior)) cont.appendChild(el('div', { class: 'caja-info', style: 'margin:0 0 14px;align-items:center' }, icono('i-info'),
+      el('p', { style: 'flex:1' }, 'Esta versión se corrió antes de un cambio del reporte y algunas tablas se ven como eran entonces. Corré una versión nueva para verlas como ahora: lo que ya revisaste pasa solo.'),
+      btn('Nueva versión con estos datos', nuevaVersion(w), 'chico', { icono: 'i-refrescar' })));
     if (datos.traslado && datos.traslado.desde) cont.appendChild(el('div', { class: 'caja-info', style: 'margin:0 0 14px' }, icono('i-deshacer'), el('p', null, `De la versión ${datos.traslado.desde} se trasladaron ${n(datos.traslado.aplicadas)} marcas` + (datos.traslado.sin_destino ? `; ${n(datos.traslado.sin_destino)} no encontraron su fila en esta versión.` : '.'))));
     cont.appendChild(medidor);
     pintarMedidor();
+    setTimeout(() => medidor.classList.add('quieta'), 900);
     if (datos.resumen && typeof datos.resumen === 'object') {
-      const grilla = el('div', { class: 'tarjeta resumen-motor' });
+      const grillaResumen = el('div', { class: 'tarjeta resumen-motor' });
       for (const [k, v] of Object.entries(datos.resumen)) {
-        if (v && typeof v === 'object' && !Array.isArray(v)) { for (const [k2, v2] of Object.entries(v)) if (typeof v2 !== 'object' || v2 === null) grilla.appendChild(el('div', null, el('span', null, `${k} · ${k2}`), el('span', { title: String(v2) }, String(v2)))); }
-        else if (!Array.isArray(v)) grilla.appendChild(el('div', null, el('span', null, k), el('span', { title: String(v) }, String(v))));
+        if (v && typeof v === 'object' && !Array.isArray(v)) { for (const [k2, v2] of Object.entries(v)) if (typeof v2 !== 'object' || v2 === null) grillaResumen.appendChild(el('div', null, el('span', null, `${k} · ${k2}`), el('span', { title: String(v2) }, String(v2)))); }
+        else if (!Array.isArray(v)) grillaResumen.appendChild(el('div', null, el('span', null, k), el('span', { title: String(v) }, String(v))));
       }
-      cont.appendChild(el('details', { class: 'resumen-corrida' }, el('summary', null, icono('i-info'), 'Resumen de la corrida', icono('i-abajo', 'flecha')), grilla));
+      cont.appendChild(el('details', { class: 'resumen-corrida' }, el('summary', null, icono('i-info'), 'Resumen de la corrida', icono('i-abajo', 'flecha')), grillaResumen));
     }
     const cuerpo = el('div', { class: 'resultados' });
     const lista = el('nav', { class: 'tarjeta lista-tablas', 'aria-label': 'Tablas del reporte' });
     const derecha = el('div');
     cuerpo.append(lista, derecha);
     cont.appendChild(cuerpo);
+    // Secciones abiertas o cerradas por el usuario (mientras dure la pantalla); sin elección, se abre la de la tabla activa.
+    if (!w.secciones) w.secciones = new Map();
+    const nombreLibro = archivo => String(archivo).replace(/\.(xlsx|csv|txt)$/i, '').replace(/_/g, ' ');
     const pintarLista = () => {
       limpiar(lista);
-      const libros = new Set(w.tablas.map(t => t.archivo).filter(Boolean));
-      const boton = t => {
-        const varios = libros.size > 1 && t.archivo && w.tablas.filter(x => x.archivo === t.archivo).length > 1;
-        return el('button', { type: 'button', class: t.tabla === w.tabla ? 'activa' : '', 'aria-current': t.tabla === w.tabla ? 'true' : null,
-          onclick: () => { w.tabla = t.tabla; w.grilla.desde = 0; w.grilla.seleccion.clear(); pintarLista(); grilla(derecha, w, alCambiar); } },
-          icono(t.revisable === false ? 'i-info' : 'i-tabla'), el('span', { class: 'nombre' }, varios && t.hoja ? t.hoja : t.titulo),
-          t.revisable === false ? el('span', { class: 'muted', style: 'font-size:12px' }, n(t.filas)) :
-            el('span', { class: 'pend' + (t.estados.pendiente ? '' : ' cero'), title: `${n(t.estados.pendiente)} pendientes de ${n(t.filas)}` }, t.estados.pendiente ? n(t.estados.pendiente) : '✓'));
-      };
-      let libro = null;
+      const boton = (t, hija) => el('button', { type: 'button', class: (t.tabla === w.tabla ? 'activa' : '') + (hija ? ' hija' : ''), 'aria-current': t.tabla === w.tabla ? 'true' : null, title: t.titulo,
+        onclick: () => { if (t.tabla === w.tabla) return; elegir(t); pintarLista(); grilla(derecha, w, alCambiar); } },
+        icono(t.revisable === false ? 'i-info' : 'i-tabla'), el('span', { class: 'nombre' }, hija && t.hoja ? t.hoja : t.titulo),
+        t.revisable === false ? el('span', { class: 'muted', style: 'font-size:12px' }, n(t.filas)) :
+          el('span', { class: 'pend' + (t.estados.pendiente ? '' : ' cero'), title: `${n(t.estados.pendiente)} pendientes de ${n(t.aRevisar == null ? t.filas : t.aRevisar)} para revisar` }, t.estados.pendiente ? n(t.estados.pendiente) : '✓'));
+      const libros = [];
       for (const t of revisables()) {
-        const varios = libros.size > 1 && t.archivo && w.tablas.filter(x => x.archivo === t.archivo).length > 1;
-        if (varios && t.archivo !== libro) { libro = t.archivo; lista.appendChild(el('div', { class: 'libro' }, t.archivo.replace(/\.(xlsx|csv|txt)$/i, '').replace(/_/g, ' '))); }
-        lista.appendChild(boton(t));
+        const clave = t.seccion || t.archivo || t.tabla;
+        let l = libros.find(x => x.clave === clave);
+        if (!l) libros.push(l = { clave, titulo: t.seccion || nombreLibro(clave), seccion: !!t.seccion, tablas: [] });
+        l.tablas.push(t);
+      }
+      for (const l of libros) {
+        // Un libro de una sola tabla va suelto, salvo que el reporte le dé título de sección (Comprobantes abiertos).
+        if (libros.length === 1 || (l.tablas.length === 1 && !l.seccion)) { for (const t of l.tablas) lista.appendChild(boton(t, false)); continue; }
+        const conActiva = l.tablas.some(t => t.tabla === w.tabla);
+        let abierta = w.secciones.has(l.clave) ? w.secciones.get(l.clave) : conActiva;
+        const pendientes = l.tablas.reduce((a, t) => a + t.estados.pendiente, 0);
+        const hijos = el('div', { class: 'seccion-hijos' + (abierta ? ' abierta' : '') }, el('div', null, l.tablas.map(t => boton(t, true))));
+        const cabeza = el('button', { type: 'button', class: 'seccion-tablas' + (abierta ? ' abierta' : '') + (conActiva ? ' con-activa' : ''), 'aria-expanded': String(abierta), title: l.titulo,
+          onclick: () => {
+            abierta = !abierta;
+            w.secciones.set(l.clave, abierta);
+            cabeza.classList.toggle('abierta', abierta);
+            cabeza.setAttribute('aria-expanded', String(abierta));
+            hijos.classList.toggle('abierta', abierta);
+          } },
+          icono('i-abajo', 'flecha'), el('span', { class: 'nombre' }, l.titulo),
+          el('span', { class: 'pend' + (pendientes ? '' : ' cero'), title: `${n(pendientes)} pendientes en esta sección` }, pendientes ? n(pendientes) : '✓'));
+        lista.append(cabeza, hijos);
       }
       const info = w.tablas.filter(t => t.revisable === false);
       if (info.length) {
         lista.appendChild(el('div', { class: 'libro' }, 'Información'));
-        for (const t of info) lista.appendChild(boton(t));
+        for (const t of info) lista.appendChild(boton(t, false));
       }
     };
     let todoRevisado = revisables().every(t => !t.estados.pendiente);
     const alCambiar = () => {
       pintarLista();
       const tot = pintarMedidor();
-      if (!todoRevisado && tot.p === 0 && revisables().length) { todoRevisado = true; fiesta(); aviso('Revisaste todas las filas. Podés exportar el Excel trabajado y marcar esta versión como resultado final.', 'ok', 8000); }
+      if (!todoRevisado && tot.p === 0 && revisables().length) { todoRevisado = true; aviso('Revisaste todas las filas. Podés exportar el Excel trabajado y marcar esta versión como resultado final.', 'ok', 8000); }
       else if (tot.p > 0) todoRevisado = false;
     };
     pintarLista();
@@ -1241,23 +1827,75 @@
     const e = w.e;
     const info = w.tablas.find(t => t.tabla === w.tabla);
     const revisable = info.revisable !== false;
+    const conOrigen = revisable && !!info.origen;
     if (!revisable) g.estado = '';
+    if (g.estado === 'revisar' && !info.revisar) g.estado = '';
+    let vista = vistaColumnas(w, info);
+    let pagina = null;
+    if (!g.filtros) g.filtros = {};
+    if (!g.condiciones) g.condiciones = {};
+    cerrarPopoverFiltro();
     limpiar(cont);
-    const buscar = el('input', { type: 'search', placeholder: 'Buscar en esta tabla…', value: g.filtro, 'aria-label': 'Buscar' });
+    const buscar = el('input', { type: 'search', placeholder: 'Buscar…', title: 'Buscar en esta tabla', value: g.filtro, 'aria-label': 'Buscar en esta tabla' });
     let temporizador = null;
     buscar.addEventListener('input', () => { clearTimeout(temporizador); temporizador = setTimeout(() => { g.filtro = buscar.value; g.desde = 0; cargar(); }, 350); });
-    const columna = el('select', { class: 'selector', 'aria-label': 'Buscar sólo en una columna', onchange: ev => { g.columna = ev.target.value; if (g.filtro) { g.desde = 0; cargar(); } } },
-      el('option', { value: '', text: 'En todas las columnas' }), info.columnas.map(c => el('option', { value: c, text: c, selected: g.columna === c })));
+    const etiquetaColumna = () => g.columna || 'En todas';
+    const columna = el('button', { type: 'button', class: 'en-buscador', 'aria-haspopup': 'listbox', title: 'Buscar sólo en una columna', onclick: ev => { ev.stopPropagation(); elegirColumna(); } },
+      el('span', { class: 'texto' }, etiquetaColumna()), icono('i-abajo'));
+    const elegirColumna = () => {
+      if (popoverFiltro && popoverFiltro.dataset.columna === '__columna') { cerrarPopoverFiltro(); return; }
+      const muchas = info.columnas.length > 8;
+      const filtroTexto = el('input', { type: 'search', class: 'entrada-texto', placeholder: 'Buscar una columna…', 'aria-label': 'Buscar una columna' });
+      const opciones = el('div', { class: 'pf-lista lista-opciones', role: 'listbox', 'aria-label': 'Buscar en' });
+      const elegirValor = valor => {
+        g.columna = valor;
+        ponerTexto(columna.querySelector('.texto'), etiquetaColumna());
+        cerrarPopoverFiltro();
+        if (g.filtro) { g.desde = 0; cargar(); }
+        buscar.focus();
+      };
+      const pintarOpciones = () => {
+        limpiar(opciones);
+        const q = filtroTexto.value.trim().toLowerCase();
+        for (const [valor, texto] of [['', 'Todas las columnas'], ...vista.orden.map(c => [c, c])]) {
+          if (q && valor && !texto.toLowerCase().includes(q)) continue;
+          const elegida = (g.columna || '') === valor;
+          opciones.appendChild(el('button', { type: 'button', role: 'option', class: 'opcion-lista' + (elegida ? ' elegida' : ''), 'aria-selected': String(elegida), onclick: () => elegirValor(valor) },
+            el('span', null, texto), elegida ? icono('i-check') : null));
+        }
+      };
+      filtroTexto.addEventListener('input', pintarOpciones);
+      filtroTexto.addEventListener('keydown', ev => { if (ev.key === 'Enter') { const b = opciones.querySelector('.opcion-lista:not(.elegida)') || opciones.querySelector('.opcion-lista'); if (b) b.click(); } });
+      const { p, reubicar } = abrirPopoverFiltro(columna, [el('div', { class: 'pf-titulo' }, icono('i-buscar'), el('b', null, 'Buscar en')), muchas ? filtroTexto : null, opciones], '__columna', 'Buscar en una columna');
+      p.classList.add('popover-columna');
+      pintarOpciones();
+      reubicar();
+      setTimeout(() => (muchas ? filtroTexto : (opciones.querySelector('.elegida') || opciones.firstChild)).focus(), 0);
+    };
     const filtros = el('div', { class: 'segmentado', role: 'group', 'aria-label': 'Filtrar por revisión' });
-    const ESTADOS_FILTRO = [['', 'Todas'], ['pendiente', 'Pendientes'], ['revisada', 'Revisadas'], ['omitida', 'Omitidas']];
-    for (const [valor, texto] of ESTADOS_FILTRO) filtros.appendChild(el('button', { type: 'button', 'data-valor': valor, class: g.estado === valor ? 'activa' : '', onclick: () => { g.estado = valor; g.desde = 0; g.seleccion.clear(); cargar(); } }, texto));
-    const cantidad = el('select', { class: 'selector', 'aria-label': 'Filas por página', onchange: ev => { g.cantidad = parseInt(ev.target.value, 10); g.desde = 0; cargar(); } }, [100, 250, 500].map(c => el('option', { value: String(c), text: c + ' por página', selected: g.cantidad === c })));
-    cont.appendChild(el('div', { class: 'barra-grilla' }, el('div', { class: 'buscador' }, icono('i-buscar'), buscar), columna, revisable ? filtros : null, cantidad));
+    for (const [valor, texto] of ESTADOS_GRILLA) {
+      if (valor === 'revisar' && !info.revisar) continue;
+      filtros.appendChild(el('button', { type: 'button', 'data-valor': valor, class: g.estado === valor ? 'activa' : '', title: valor === 'revisar' ? `Las filas que no dan ${info.revisar.salvo.join(' ni ')}` : null,
+        onclick: () => { g.estado = valor; g.desde = 0; g.seleccion.clear(); cargar(); } }, texto));
+    }
+    const cantidad = el('select', { class: 'selector', 'aria-label': 'Filas por página', onchange: ev => { g.cantidad = parseInt(ev.target.value, 10); g.desde = 0; cargar(); } }, [100, 250, 500].map(c => el('option', { value: String(c), text: String(c), selected: g.cantidad === c })));
+    const exportarVista = async () => {
+      const q = consultaGrilla(g);
+      q.set('tabla', info.tabla);
+      q.set('columnas', JSON.stringify(vista.visibles));
+      try {
+        await descargar(`/api/ejecuciones/${encodeURIComponent(e.id)}/exportar-vista?${q}`, `Excel de la vista de ${info.titulo}`, pagina && pagina.total > 20000 ? `${n(pagina.total)} filas: puede tardar unos segundos.` : `${n(pagina ? pagina.total : 0)} filas.`);
+      } catch (err) { avisarError(err); }
+    };
+    cont.appendChild(el('div', { class: 'barra-grilla' }, el('div', { class: 'buscador' }, icono('i-buscar'), buscar, columna), revisable ? filtros : null,
+      el('div', { class: 'acciones-grilla' },
+        btn('Columnas', () => configurarColumnas(w, info, () => { vista = vistaColumnas(w, info); pintarTabla(); }), 'chico', { icono: 'i-columnas', title: 'Elegir qué columnas ver y en qué orden' }),
+        btn('Exportar', exportarVista, 'chico', { icono: 'i-bajar', title: 'Exportar lo que ves: un Excel con todas las filas de este filtro (no sólo esta página), con las columnas a la vista' }))));
+    const activos = el('div', { class: 'filtros-activos vacio', 'aria-live': 'polite' });
     const acciones = el('div', { class: 'barra-seleccion vacia' });
     const marco = el('div', { class: 'marco-grilla' });
     const pie = el('div', { class: 'paginado' });
-    cont.append(acciones, marco, pie);
-    let pagina = null;
+    cont.append(activos, acciones, marco, pie);
     const marcar = async (filas, estadoNuevo, obs) => {
       if (!filas.length) return;
       try {
@@ -1276,7 +1914,7 @@
       const cuantas = g.seleccion.size;
       acciones.classList.toggle('vacia', cuantas === 0);
       if (!revisable) { acciones.append(icono('i-info'), el('span', null, 'Tabla informativa: muestra totales o datos de respaldo y no se revisa fila por fila.')); return; }
-      if (!cuantas) { acciones.append(icono('i-info'), el('span', null, 'Hacé clic en una o más filas para marcarlas como revisadas u omitidas, o para anotarles una observación. Doble clic en Observaciones edita una sola fila.')); return; }
+      if (!cuantas) { acciones.append(icono('i-info'), el('span', null, 'Hacé clic en una o más filas para marcarlas como revisadas u omitidas, o para anotarles una observación. Doble clic en la observación edita una sola fila.' + (conOrigen ? ' El botón verde baja la fila del archivo original en Excel.' : ''))); return; }
       const filas = [...g.seleccion];
       const obs = el('input', { type: 'text', class: 'entrada-texto', placeholder: 'Observación (opcional)…', 'aria-label': 'Observación' });
       acciones.append(el('span', { class: 'cuenta-sel' }, cuantas === 1 ? '1 fila' : `${n(cuantas)} filas`),
@@ -1286,38 +1924,187 @@
         obs, btn('Guardar observación', () => marcar(filas, null, obs.value), 'chico primario', { icono: 'i-mensaje' }),
         btn('', () => { g.seleccion.clear(); pintarAcciones(); pintarTabla(); }, 'fantasma icono chico', { icono: 'i-x', aria: 'Deseleccionar', title: 'Deseleccionar' }));
     };
-    const pintarTabla = (cambiadas = new Set()) => {
+    // ---- filtro de encabezado (como en Excel): lista de valores en texto, condiciones en importes
+    const hayFiltros = () => Object.keys(g.filtros).length + Object.keys(g.condiciones).length > 0;
+    const recargarFiltrado = () => { g.desde = 0; g.seleccion.clear(); cerrarPopoverFiltro(); cargar(); };
+    const quitarFiltro = c => { delete g.filtros[c]; delete g.condiciones[c]; recargarFiltrado(); };
+    const describirFiltro = c => {
+      const f = g.filtros[c];
+      if (f) {
+        if (Array.isArray(f)) return f.length === 1 ? `${c}: ${f[0] || '(vacías)'}` : `${c}: ${n(f.length)} valores`;
+        return f.excluir.length === 1 ? `${c}: todos menos ${f.excluir[0] || '(vacías)'}` : `${c}: todos menos ${n(f.excluir.length)} valores`;
+      }
+      const k = g.condiciones[c];
+      return { distinto_cero: `${c} distinto de cero`, igual: `${c} igual a ${importeLegible(k.a)}`, mayor: `${c} mayor que ${importeLegible(k.a)}`,
+        menor: `${c} menor que ${importeLegible(k.a)}`, entre: `${c} entre ${importeLegible(Math.min(k.a, k.b))} y ${importeLegible(Math.max(k.a, k.b))}` }[k.op] || c;
+    };
+    const pintarActivos = () => {
+      limpiar(activos);
+      const cols = [...new Set([...Object.keys(g.filtros), ...Object.keys(g.condiciones)])];
+      activos.classList.toggle('vacio', !cols.length);
+      if (!cols.length) return;
+      activos.append(...[el('span', { class: 'muted' }, 'Filtrado por:'),
+        ...cols.map(c => el('span', { class: 'chip-filtro' }, icono('i-filtro'), el('span', null, describirFiltro(c)),
+          el('button', { type: 'button', 'aria-label': 'Quitar el filtro de ' + c, title: 'Quitar este filtro', onclick: () => quitarFiltro(c) }, icono('i-x')))),
+        cols.length > 1 ? btn('Quitar todos', () => { g.filtros = {}; g.condiciones = {}; recargarFiltrado(); }, 'fantasma chico', { icono: 'i-x' }) : null].filter(Boolean));
+    };
+    const filtroDeNumero = (c, cuerpo, pie) => {
+      const actual = g.condiciones[c] || { op: 'distinto_cero' };
+      const mostrar = v => v == null ? '' : String(v).replace('.', ',');
+      const sel = el('select', { class: 'selector', 'aria-label': 'Condición' }, OPERACIONES_NUMERO.map(([v, t]) => el('option', { value: v, text: t, selected: actual.op === v })));
+      const a = el('input', { type: 'text', class: 'entrada-texto', inputmode: 'decimal', placeholder: 'Importe', value: mostrar(actual.a), 'aria-label': 'Importe' });
+      const y = el('span', { class: 'muted' }, 'y');
+      const b = el('input', { type: 'text', class: 'entrada-texto', inputmode: 'decimal', placeholder: 'Importe', value: mostrar(actual.b), 'aria-label': 'Segundo importe' });
+      const refrescar = () => { const op = sel.value; a.hidden = op === 'distinto_cero'; y.hidden = b.hidden = op !== 'entre'; };
+      sel.addEventListener('change', () => { refrescar(); if (!a.hidden) a.focus(); });
+      const aplicar = () => {
+        const cond = { op: sel.value };
+        if (cond.op !== 'distinto_cero') { cond.a = leerImporte(a.value); if (cond.a === null) { a.focus(); aviso('Escribí un importe válido, por ejemplo -1.500,50.', 'atencion'); return; } }
+        if (cond.op === 'entre') { cond.b = leerImporte(b.value); if (cond.b === null) { b.focus(); aviso('Escribí el segundo importe.', 'atencion'); return; } }
+        delete g.filtros[c];
+        g.condiciones[c] = cond;
+        recargarFiltrado();
+      };
+      for (const x of [a, b]) x.addEventListener('keydown', ev => { if (ev.key === 'Enter') aplicar(); });
+      cuerpo.append(sel, el('div', { class: 'pf-importes' }, a, y, b), el('p', { class: 'muted pf-ayuda' }, 'Las celdas vacías no entran en ninguna condición.'));
+      refrescar();
+      pie.append(btn('Quitar filtro', () => quitarFiltro(c), 'fantasma chico', { icono: 'i-x', disabled: !g.condiciones[c] }), btn('Aplicar', aplicar, 'primario chico', { icono: 'i-check' }));
+      setTimeout(() => (a.hidden ? sel : a).focus(), 0);
+    };
+    const filtroDeValores = async (c, cuerpo, pie, reubicar) => {
+      const actual = g.filtros[c];
+      const marcadoAntes = v => Array.isArray(actual) ? actual.includes(v) : actual && actual.excluir ? !actual.excluir.includes(v) : true;
+      const buscar = el('input', { type: 'search', class: 'entrada-texto', placeholder: 'Buscar un valor…', 'aria-label': 'Buscar un valor' });
+      const todas = el('input', { type: 'checkbox', 'aria-label': 'Seleccionar todo' });
+      const lista = el('div', { class: 'pf-lista', role: 'group', 'aria-label': 'Valores de ' + c });
+      const nota = el('p', { class: 'muted pf-ayuda' });
+      let valores = [];
+      let completo = true;
+      let marcados = new Set();
+      const sincronizar = () => {
+        todas.checked = valores.length > 0 && valores.every(x => marcados.has(x.valor));
+        todas.indeterminate = !todas.checked && valores.some(x => marcados.has(x.valor));
+      };
+      const pintarLista = () => {
+        limpiar(lista);
+        for (const x of valores) {
+          lista.appendChild(el('label', { class: 'casilla' }, el('input', { type: 'checkbox', checked: marcados.has(x.valor), onchange: ev => { if (ev.target.checked) marcados.add(x.valor); else marcados.delete(x.valor); sincronizar(); } }),
+            el('span', { class: 'pf-valor', title: x.valor }, x.valor === '' ? '(vacías)' : x.valor), el('span', { class: 'muted pf-cantidad' }, n(x.cantidad))));
+        }
+        if (!valores.length) lista.appendChild(el('p', { class: 'muted pf-ayuda', style: 'padding:6px 0' }, 'Ningún valor coincide.'));
+        nota.textContent = completo ? '' : `Se muestran los primeros ${n(valores.length)} valores: escribí para buscar el que necesitás.`;
+        sincronizar();
+      };
+      const cargarValores = async () => {
+        const q = consultaGrilla(g, c);
+        q.set('valoresDe', c);
+        q.set('ordenValores', 'valor');
+        q.set('buscar', buscar.value);
+        try {
+          const d = await api('GET', `/api/ejecuciones/${encodeURIComponent(e.id)}/tablas/${w.tabla}/distintos?${q}`);
+          valores = d.valores;
+          completo = d.completo;
+          marcados = new Set(valores.filter(x => marcadoAntes(x.valor)).map(x => x.valor));
+          pintarLista();
+          reubicar();
+        } catch (err) { avisarError(err); }
+      };
+      todas.addEventListener('change', () => { for (const x of valores) { if (todas.checked) marcados.add(x.valor); else marcados.delete(x.valor); } pintarLista(); });
+      let espera = null;
+      buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(cargarValores, 300); });
+      const aplicar = () => {
+        const vistos = valores.map(x => x.valor);
+        const elegidos = vistos.filter(v => marcados.has(v));
+        const buscando = !!buscar.value.trim();
+        let nuevo = null;
+        // Con la lista completa (o una búsqueda) quedan los marcados; si la lista vino cortada, se excluyen los desmarcados.
+        if (buscando || completo) nuevo = !buscando && elegidos.length === vistos.length ? null : elegidos;
+        else { const excluir = vistos.filter(v => !marcados.has(v)); nuevo = excluir.length ? { excluir } : null; }
+        if (Array.isArray(nuevo) && !nuevo.length) { aviso('Marcá al menos un valor.', 'atencion'); return; }
+        delete g.condiciones[c];
+        if (nuevo) g.filtros[c] = nuevo; else delete g.filtros[c];
+        recargarFiltrado();
+      };
+      buscar.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(espera); aplicar(); } });
+      cuerpo.append(buscar, el('label', { class: 'casilla pf-todas' }, todas, el('span', null, 'Seleccionar todo')), lista, nota);
+      pie.append(btn('Quitar filtro', () => quitarFiltro(c), 'fantasma chico', { icono: 'i-x', disabled: !g.filtros[c] }), btn('Aplicar', aplicar, 'primario chico', { icono: 'i-check' }));
+      buscar.focus();
+      await cargarValores();
+    };
+    const abrirFiltro = async (c, ancla) => {
+      if (popoverFiltro && popoverFiltro.dataset.columna === c) { cerrarPopoverFiltro(); return; }
+      const num = pagina.tipos[pagina.columnas.indexOf(c)] === 'numero';
+      const ordenar = desc => { g.orden = c; g.desc = desc; g.desde = 0; cerrarPopoverFiltro(); cargar(); };
+      const cuerpo = el('div', { class: 'pf-cuerpo' });
+      const pieFiltro = el('div', { class: 'pf-pie' });
+      const { reubicar } = abrirPopoverFiltro(ancla, [
+        el('div', { class: 'pf-titulo' }, icono('i-filtro'), el('b', null, c)),
+        el('div', { class: 'pf-orden' }, btn(num ? 'Menor a mayor' : 'De la A a la Z', () => ordenar(false), 'fantasma chico', { icono: 'i-arriba' }),
+          btn(num ? 'Mayor a menor' : 'De la Z a la A', () => ordenar(true), 'fantasma chico', { icono: 'i-abajo' })),
+        cuerpo, pieFiltro], c);
+      if (num) { filtroDeNumero(c, cuerpo, pieFiltro); reubicar(); } else await filtroDeValores(c, cuerpo, pieFiltro, reubicar);
+    };
+    const moverColumna = async (origen, destino) => {
+      if (!origen || origen === destino || !vista.orden.includes(origen) || !vista.orden.includes(destino)) return;
+      const orden = [...vista.orden];
+      orden.splice(orden.indexOf(origen), 1);
+      orden.splice(vista.orden.indexOf(destino), 0, origen);
+      try { await guardarVista(w, info, { orden, ocultas: vista.ocultas }); vista = vistaColumnas(w, info); pintarTabla(); } catch (err) { avisarError(err); }
+    };
+    const pintarTabla = (cambiadas = new Set(), arriba = false) => {
+      const desplazado = [marco.scrollTop, marco.scrollLeft];
       limpiar(marco);
       if (!pagina) return;
+      const indices = vista.visibles.map(c => pagina.columnas.indexOf(c)).filter(i => i >= 0);
+      const obsDeDatos = pagina.columnas.includes('Observaciones');
       const tabla = el('table', { class: 'grilla' });
       const todas = el('input', { type: 'checkbox', 'aria-label': 'Marcar todas las filas de la página', checked: pagina.filas.length > 0 && pagina.filas.every(f => g.seleccion.has(f._fila)),
         onchange: ev => { for (const f of pagina.filas) { if (ev.target.checked) g.seleccion.add(f._fila); else g.seleccion.delete(f._fila); } pintarAcciones(); pintarTabla(); } });
       const th = c => {
         const activa = g.orden === c;
         const num = pagina.tipos[pagina.columnas.indexOf(c)] === 'numero';
-        return el('th', { class: num ? 'num' : '', 'aria-sort': activa ? (g.desc ? 'descending' : 'ascending') : null },
-          el('button', { type: 'button', title: 'Ordenar por ' + c, onclick: () => { if (activa && !g.desc) g.desc = true; else if (activa && g.desc) { g.orden = null; g.desc = false; } else { g.orden = c; g.desc = false; } g.desde = 0; cargar(); } },
-            c, activa ? (() => { const ic = icono('i-abajo'); if (!g.desc) ic.style.transform = 'rotate(180deg)'; return ic; })() : null));
+        const filtrada = !!(g.filtros[c] || g.condiciones[c]);
+        const celda = el('th', { class: (num ? 'num' : '') + (filtrada ? ' filtrada' : ''), draggable: 'true', 'aria-sort': activa ? (g.desc ? 'descending' : 'ascending') : null },
+          el('div', { class: 'th-contenido' },
+            el('button', { type: 'button', title: `Ordenar por ${c}. Arrastrá el encabezado para mover la columna.`, onclick: () => { if (activa && !g.desc) g.desc = true; else if (activa && g.desc) { g.orden = null; g.desc = false; } else { g.orden = c; g.desc = false; } g.desde = 0; cargar(); } },
+              c, activa ? (() => { const ic = icono('i-abajo'); if (!g.desc) ic.style.transform = 'rotate(180deg)'; return ic; })() : null),
+            el('button', { type: 'button', class: 'boton-filtro' + (filtrada ? ' activo' : ''), 'aria-label': `Filtrar ${c}`, 'aria-haspopup': 'dialog',
+              title: filtrada ? `Filtro aplicado: ${describirFiltro(c)}` : 'Filtrar como en Excel', onclick: ev => { ev.stopPropagation(); abrirFiltro(c, celda); } }, icono('i-filtro'))));
+        celda.addEventListener('dragstart', ev => { ev.dataTransfer.setData('text/plain', c); ev.dataTransfer.effectAllowed = 'move'; celda.classList.add('arrastrando'); });
+        celda.addEventListener('dragend', () => celda.classList.remove('arrastrando'));
+        celda.addEventListener('dragover', ev => { ev.preventDefault(); celda.classList.add('destino'); });
+        celda.addEventListener('dragleave', () => celda.classList.remove('destino'));
+        celda.addEventListener('drop', ev => { ev.preventDefault(); celda.classList.remove('destino'); moverColumna(ev.dataTransfer.getData('text/plain'), c); });
+        return celda;
       };
-      tabla.appendChild(el('thead', null, el('tr', null, revisable ? [el('th', { class: 'sel' }, todas), el('th', null, el('button', { type: 'button', onclick: () => { g.orden = g.orden === '_estado' ? null : '_estado'; g.desde = 0; cargar(); } }, 'Revisión'))] : null, pagina.columnas.map(th), revisable ? el('th', null, 'Observaciones') : null)));
+      tabla.appendChild(el('thead', null, el('tr', null,
+        revisable ? el('th', { class: 'sel' }, todas) : null,
+        conOrigen ? el('th', { class: 'col-acciones', title: 'Excel de origen de la fila' }, 'Origen') : null,
+        revisable ? el('th', null, el('button', { type: 'button', onclick: () => { g.orden = g.orden === '_estado' ? null : '_estado'; g.desde = 0; cargar(); } }, 'Revisión')) : null,
+        indices.map(i => th(pagina.columnas[i])),
+        revisable ? el('th', null, obsDeDatos ? 'Observación de la revisión' : 'Observaciones') : null)));
       const cuerpo = el('tbody');
       for (const f of pagina.filas) {
         const tr = el('tr', { class: (g.seleccion.has(f._fila) ? 'seleccionada ' : '') + f._estado + (cambiadas.has(f._fila) ? ' cambio' : '') });
         const casilla = el('input', { type: 'checkbox', checked: g.seleccion.has(f._fila), 'aria-label': 'Marcar fila', onchange: ev => { if (ev.target.checked) g.seleccion.add(f._fila); else g.seleccion.delete(f._fila); tr.classList.toggle('seleccionada', ev.target.checked); pintarAcciones(); } });
         if (revisable) tr.appendChild(el('td', { class: 'sel' }, casilla));
+        if (conOrigen) tr.appendChild(el('td', { class: 'col-acciones' }, btn('', () => excelDeOrigen(e, info.tabla, f._fila, f.valores[['Comprobante', 'NumeroFactura', 'NumeroComprobanteImputacion'].map(c => pagina.columnas.indexOf(c)).find(i => i >= 0)]), 'fantasma icono chico boton-origen', { icono: 'i-planilla', aria: 'Excel de origen de esta fila', title: 'Bajar en Excel las filas del archivo original que forman esta fila' })));
         const origen = f._origen && f._origen !== 'manual' && f._estado !== 'pendiente' ? { version: 'de la versión anterior', cierre: 'del cierre anterior', importado: 'importada' }[f._origen] : null;
         if (revisable) tr.appendChild(el('td', { class: 'revision', title: origen ? 'Marca ' + origen : null },
-          f._estado === 'revisada' ? el('span', { class: 'chip ok' }, icono('i-check'), 'Revisada') : f._estado === 'omitida' ? el('span', { class: 'chip' }, icono('i-ojo-tachado'), 'Omitida') : el('span', { class: 'chip borde' }, 'Pendiente')));
-        f.valores.forEach((v, i) => {
+          f._estado === 'revisada' ? el('span', { class: 'chip ok' }, icono('i-check'), 'Revisada') : f._estado === 'omitida' ? el('span', { class: 'chip' }, icono('i-ojo-tachado'), 'Omitida')
+            : f._req === false ? el('span', { class: 'chip tenue', title: `No hace falta revisarla: ${textoRegla(info.revisar)}` }, 'No requiere') : el('span', { class: 'chip borde' }, 'Pendiente')));
+        for (const i of indices) {
+          const v = f.valores[i];
           const nombre = pagina.columnas[i];
           const num = pagina.tipos[i] === 'numero';
           const contenido = (nombre === 'Resultado' || nombre === 'Estado') && v ? celdaResultado(v) : num ? numeroLegible(v) : v;
           tr.appendChild(el('td', { class: (num ? 'num' : '') + (f._marcas.includes(nombre) ? ' resaltada' : ''), title: v && v.length > 36 ? v : null }, contenido));
-        });
+        }
         if (!revisable) { tr.style.cursor = 'default'; cuerpo.appendChild(tr); continue; }
-        tr.appendChild(el('td', { class: 'obs', title: f._obs ? f._obs : 'Doble clic para escribir una observación' }, f._obs || ''));
+        const celdaObs = el('td', { class: 'obs', title: f._obs ? f._obs : 'Doble clic para escribir una observación' }, f._obs || '');
+        tr.appendChild(celdaObs);
         tr.addEventListener('click', ev => { if (ev.target.closest('input,button')) return; casilla.checked = !casilla.checked; casilla.dispatchEvent(new Event('change')); });
-        tr.lastChild.addEventListener('dblclick', async ev => {
+        celdaObs.addEventListener('dblclick', async ev => {
           ev.stopPropagation();
           const t = await pedirTexto('Observación', 'Lo que quieras anotar sobre esta fila.', f._obs || '', true);
           if (t === null) return;
@@ -1325,61 +2112,189 @@
         });
         cuerpo.appendChild(tr);
       }
-      if (!pagina.filas.length) cuerpo.appendChild(el('tr', null, el('td', { colspan: String(pagina.columnas.length + (revisable ? 3 : 0)), class: 'vacia' }, g.filtro || g.estado ? 'Ninguna fila coincide con el filtro.' : 'Esta tabla está vacía: no hay nada para revisar.')));
+      const columnasTotales = indices.length + (revisable ? 3 : 0) + (conOrigen ? 1 : 0);
+      if (!pagina.filas.length) cuerpo.appendChild(el('tr', null, el('td', { colspan: String(columnasTotales), class: 'vacia' },
+        g.filtro || hayFiltros() || (g.estado && g.estado !== 'revisar') ? 'Ninguna fila coincide con el filtro.' : g.estado === 'revisar' ? `No hay filas para revisar: todas dan ${info.revisar.salvo.join(' o ')}.` : 'Esta tabla está vacía: no hay nada para revisar.')));
       tabla.appendChild(cuerpo);
       marco.appendChild(tabla);
+      marco.scrollTop = arriba ? 0 : desplazado[0];
+      marco.scrollLeft = desplazado[1];
       limpiar(pie);
       const desde = pagina.total ? g.desde + 1 : 0;
       const hasta = Math.min(g.desde + g.cantidad, pagina.total);
-      pie.append(el('span', null, `Filas ${n(desde)} a ${n(hasta)} de ${n(pagina.total)}`),
+      const ocultas = vista.ocultas.size;
+      pie.append(el('div', { class: 'pie-izq' }, el('span', null, `Filas ${n(desde)} a ${n(hasta)} de ${n(pagina.total)}` + (ocultas ? ` · ${ocultas === 1 ? 'una columna oculta' : n(ocultas) + ' columnas ocultas'}` : '')),
+          el('label', { class: 'por-pagina' }, cantidad, el('span', null, 'por página'))),
         el('div', { class: 'botones' }, btn('Anterior', () => { g.desde = Math.max(0, g.desde - g.cantidad); cargar(); }, 'chico', { icono: 'i-izq', disabled: g.desde === 0 }), btn('Siguiente', () => { g.desde += g.cantidad; cargar(); }, 'chico', { icono: 'i-der', disabled: hasta >= pagina.total })));
     };
     const cargar = async (cambiadas) => {
-      const q = new URLSearchParams({ desde: g.desde, cantidad: g.cantidad, filtro: g.filtro, estado: g.estado, columna: g.columna });
-      if (g.orden) { q.set('orden', g.orden); q.set('desc', g.desc ? '1' : '0'); }
+      const q = consultaGrilla(g);
+      q.set('desde', g.desde);
+      q.set('cantidad', g.cantidad);
+      const espera = setTimeout(() => marco.classList.add('cargando'), 180);
       try { pagina = await api('GET', `/api/ejecuciones/${encodeURIComponent(e.id)}/tablas/${w.tabla}?${q}`); } catch (err) { avisarError(err); return; }
+      finally { clearTimeout(espera); marco.classList.remove('cargando'); }
       for (const b of filtros.children) b.classList.toggle('activa', b.dataset.valor === g.estado);
+      pintarActivos();
       pintarAcciones();
-      pintarTabla(cambiadas instanceof Set ? cambiadas : new Set());
+      const tras = cambiadas instanceof Set;
+      pintarTabla(tras ? cambiadas : new Set(), !tras);
     };
     await cargar();
   }
 
   // paso 5
+  // Armado del Excel en un renglón: qué filas, qué estado de revisión y qué columnas. Elegir una opción sólo cambia
+  // su marca y la cuenta de filas (no se redibuja el formulario: así no parpadea).
   async function pasoExportar(cont, w) {
     const { e, reporte, cierre } = w;
-    const [archivos, datos] = await Promise.all([api('GET', `/api/ejecuciones/${encodeURIComponent(e.id)}/archivos`), api('GET', `/api/ejecuciones/${encodeURIComponent(e.id)}/tablas`)]);
     const base = `/api/ejecuciones/${encodeURIComponent(e.id)}`;
-    const sinOmitidas = el('input', { type: 'checkbox', id: 'sin-omitidas' });
-    const libros = [...new Set(datos.tablas.map(t => t.archivo).filter(Boolean))];
-    const listaTrabajados = el('div', { class: 'lista-descargas' });
-    const pintar = () => {
-      limpiar(listaTrabajados);
-      const suf = sinOmitidas.checked ? '&incluirOmitidas=0' : '';
-      for (const libro of libros) listaTrabajados.appendChild(el('a', { class: 'descarga', href: `${base}/exportar?libro=${encodeURIComponent(libro)}${suf}` }, el('span', { class: 'icono-archivo' }, icono('i-planilla', 'g')),
-        el('span', { class: 'datos' }, el('b', null, libros.length === 1 ? reporte.nombre : libro.replace(/\.(xlsx|csv|txt)$/i, '').replace(/_/g, ' ')), el('small', null, 'Excel trabajado · ' + datos.tablas.filter(t => t.archivo === libro).map(t => t.hoja || t.titulo).join(', '))), icono('i-bajar')));
+    const datos = await api('GET', `${base}/tablas`);
+    w.tablas = datos.tablas;
+    const revisables = datos.tablas.filter(t => t.revisable !== false);
+    const elegibles = [...revisables, ...datos.tablas.filter(t => t.revisable === false)];
+    const op = { tabla: (elegibles.find(t => t.principal) || elegibles[0] || {}).tabla, filas: null, valores: null, estados: new Set(['pendiente', 'revisada', 'omitida']), conObs: false, columnas: 'vista', resumen: true };
+    let actual = null;
+    let total = 0;
+    let turno = 0;
+    const formulario = el('div', { class: 'armado-excel' });
+    const cuenta = el('div', { class: 'cuenta-exportar', role: 'status' }, icono('i-planilla'), el('span', null, 'Contando filas…'));
+    const consulta = () => {
+      const { info, colValores } = actual;
+      const q = new URLSearchParams({ tabla: info.tabla });
+      if (op.filas === 'revisar') q.set('requiere', '1');
+      if (op.filas === 'valores' && colValores && op.valores) q.set('filtros', JSON.stringify({ [colValores]: [...op.valores] }));
+      if (info.revisable !== false && op.estados.size < 3) q.set('estados', [...op.estados].join(','));
+      if (op.conObs) q.set('conObs', '1');
+      return q;
     };
-    sinOmitidas.addEventListener('change', pintar);
-    pintar();
-    const listaOriginales = el('div', { class: 'lista-descargas' });
-    for (const a of archivos) listaOriginales.appendChild(el('a', { class: 'descarga', href: `${base}/archivos/${a.ruta.split('/').map(encodeURIComponent).join('/')}` }, el('span', { class: 'icono-archivo', style: 'background:var(--panel2);color:var(--muted)' }, icono('i-archivo', 'g')), el('span', { class: 'datos' }, el('b', null, a.ruta), el('small', null, bytesLegibles(a.bytes))), icono('i-bajar')));
-    if (!archivos.length) listaOriginales.appendChild(el('p', { class: 'muted' }, 'Esta corrida no dejó archivos.'));
+    const descargarElegido = async () => {
+      const { info, vista, informativas } = actual;
+      const q = consulta();
+      q.set('columnas', JSON.stringify(op.columnas === 'vista' ? vista.visibles : info.columnas));
+      if (op.resumen && informativas.length) q.set('resumen', '1');
+      try { await descargar(`${base}/exportar-vista?${q}`, `Excel de ${info.titulo}`, total > 20000 ? `${n(total)} filas: puede tardar unos segundos.` : `${n(total)} filas.`); } catch (err) { avisarError(err); }
+    };
+    const botonDescargar = btn('Descargar Excel', descargarElegido, 'primario', { icono: 'i-bajar' });
+    const ponerCuenta = (texto, nodoNumero) => {
+      cuenta.classList.remove('contando');
+      limpiar(cuenta).append(icono('i-planilla'), el('span', null, nodoNumero || '', texto));
+    };
+    const contar = async () => {
+      const mio = ++turno;
+      if (actual.info.revisable !== false && !op.estados.size) { total = 0; ponerCuenta('Elegí al menos un estado de revisión.'); botonDescargar.disabled = true; return; }
+      if (op.filas === 'valores' && op.valores && !op.valores.size) { total = 0; ponerCuenta('Elegí al menos un valor.'); botonDescargar.disabled = true; return; }
+      cuenta.classList.add('contando');
+      const q = consulta();
+      q.set('cantidad', '1');
+      try {
+        const r = await api('GET', `${base}/tablas/${actual.info.tabla}?${q}`, undefined, { silencioso: true });
+        if (mio !== turno) return;
+        total = r.total;
+        if (total) ponerCuenta(total === 1 ? ' va a salir en el Excel.' : ' van a salir en el Excel.', el('b', null, total === 1 ? 'Una fila' : `${n(total)} filas`));
+        else ponerCuenta('Ninguna fila cumple lo elegido.');
+        botonDescargar.disabled = !total;
+      } catch (err) { if (mio === turno) { ponerCuenta(err.message); botonDescargar.disabled = true; } }
+    };
+    // Una opción de radio con forma de tarjeta (todas de la misma altura; el detalle va en una línea).
+    const opcion = (grupo, valor, titulo, detalle, alElegir) => {
+      const input = el('input', { type: 'radio', name: 'exp-' + grupo, value: valor, checked: op[grupo] === valor,
+        onchange: () => { op[grupo] = valor; for (const l of formulario.querySelectorAll(`.opcion-fila[data-grupo="${grupo}"]`)) l.classList.toggle('elegida', l.dataset.valor === valor); if (alElegir) alElegir(); if (grupo !== 'columnas') contar(); } });
+      return el('label', { class: 'opcion-fila' + (op[grupo] === valor ? ' elegida' : ''), 'data-grupo': grupo, 'data-valor': valor, title: detalle },
+        input, el('span', { class: 'textos' }, el('b', null, titulo), el('small', null, detalle)));
+    };
+    const armar = () => {
+      const info = datos.tablas.find(t => t.tabla === op.tabla);
+      limpiar(formulario);
+      if (!info) { formulario.appendChild(el('p', { class: 'muted' }, 'Esta corrida no dejó tablas para exportar.')); botonDescargar.disabled = true; return; }
+      const regla = info.revisar;
+      const colValores = (regla && regla.columna) || ['Resultado', 'Estado', 'Motivo'].find(c => info.columnas.includes(c)) || null;
+      if (op.filas === null || (op.filas === 'revisar' && !regla) || (op.filas === 'valores' && !colValores)) op.filas = regla ? 'revisar' : 'todas';
+      const vista = vistaColumnas(w, info);
+      const informativas = datos.tablas.filter(t => t.revisable === false && t.archivo && t.archivo === info.archivo && t.tabla !== info.tabla);
+      actual = { info, colValores, vista, informativas };
+      // valores de la columna de resultado: se piden una sola vez, la primera vez que se elige "Por …"
+      const cajaValores = el('div', { class: 'valores-exportar' + (op.filas === 'valores' ? '' : ' oculto') });
+      let valoresPedidos = false;
+      const mostrarValores = async () => {
+        cajaValores.classList.toggle('oculto', op.filas !== 'valores');
+        if (op.filas !== 'valores' || valoresPedidos || !colValores) return;
+        valoresPedidos = true;
+        cajaValores.appendChild(el('p', { class: 'muted cargando-texto' }, el('span', { class: 'girador' }), 'Buscando los valores…'));
+        try {
+          const d = await api('GET', `${base}/tablas/${info.tabla}/distintos?${new URLSearchParams({ valoresDe: colValores })}`);
+          if (!op.valores) op.valores = new Set(d.valores.filter(x => !(regla && regla.salvo.includes(x.valor))).map(x => x.valor));
+          limpiar(cajaValores);
+          for (const x of d.valores) {
+            cajaValores.appendChild(el('label', { class: 'casilla' }, el('input', { type: 'checkbox', checked: op.valores.has(x.valor), onchange: ev => { if (ev.target.checked) op.valores.add(x.valor); else op.valores.delete(x.valor); contar(); } }),
+              el('span', { class: 'pf-valor', title: x.valor }, x.valor || '(vacías)'), el('span', { class: 'muted pf-cantidad' }, n(x.cantidad))));
+          }
+          if (!d.completo) cajaValores.appendChild(el('p', { class: 'muted' }, 'Se muestran los valores más frecuentes.'));
+          contar();
+        } catch (err) { valoresPedidos = false; limpiar(cajaValores); avisarError(err); }
+      };
+      const columnaFilas = el('div', { class: 'col-exportar' }, el('h3', null, icono('i-tabla'), 'Qué filas'),
+        regla ? opcion('filas', 'revisar', 'Para revisar', `${n(info.aRevisar)} filas: las que no dan ${regla.salvo.join(' ni ')}`, mostrarValores) : null,
+        opcion('filas', 'todas', 'Todas', `${n(info.filas)} filas de la tabla`, mostrarValores),
+        colValores ? opcion('filas', 'valores', `Por ${colValores}`, 'Marcás los valores que querés', mostrarValores) : null,
+        cajaValores);
+      const casilla = (activo, texto, alCambiar) => el('label', { class: 'casilla' }, el('input', { type: 'checkbox', checked: activo, onchange: ev => { alCambiar(ev.target.checked); contar(); } }), el('span', null, texto));
+      const columnaRevision = info.revisable !== false ? el('div', { class: 'col-exportar' }, el('h3', null, icono('i-check-circulo'), 'Estado de la revisión'),
+        el('div', { class: 'casillas-exportar' },
+          ...[['pendiente', 'Pendientes'], ['revisada', 'Revisadas'], ['omitida', 'Omitidas']].map(([v, t]) => casilla(op.estados.has(v), t, si => { if (si) op.estados.add(v); else op.estados.delete(v); })),
+          casilla(op.conObs, 'Sólo las que tienen observación', si => { op.conObs = si; }))) : null;
+      const columnaColumnas = el('div', { class: 'col-exportar' }, el('h3', null, icono('i-columnas'), 'Qué columnas'),
+        opcion('columnas', 'vista', 'Las de tu vista', `${n(vista.visibles.length)} columnas, en el orden de Resultados`),
+        opcion('columnas', 'todas', 'Todas', `${n(info.columnas.length)} columnas, en el orden del reporte`),
+        informativas.length ? el('label', { class: 'casilla', style: 'margin-top:4px' }, el('input', { type: 'checkbox', checked: op.resumen, onchange: ev => { op.resumen = ev.target.checked; } }),
+          el('span', null, `Agregar ${informativas.map(t => t.titulo).join(' y ')} como primera hoja`)) : null);
+      const selTabla = elegibles.length > 1 ? el('div', { class: 'campo selector-tabla' }, el('label', { for: 'exp-tabla' }, 'Tabla'),
+        el('select', { id: 'exp-tabla', class: 'selector', onchange: ev => { op.tabla = ev.target.value; op.filas = null; op.valores = null; armar(); } },
+          elegibles.map(t => el('option', { value: t.tabla, text: (t.hoja && t.hoja !== t.titulo ? `${t.titulo} (${t.hoja})` : t.titulo) + ` · ${n(t.filas)} filas`, selected: t.tabla === op.tabla })))) : null;
+      formulario.classList.toggle('sin-revision', !columnaRevision);
+      formulario.append(...[selTabla, columnaFilas, columnaRevision, columnaColumnas, el('div', { class: 'pie-armado' }, cuenta, botonDescargar)].filter(Boolean));
+      mostrarValores();
+      contar();
+    };
+    const libros = [...new Set(datos.tablas.map(t => t.archivo).filter(Boolean))];
+    const sinOmitidas = el('input', { type: 'checkbox', id: 'sin-omitidas' });
+    const listaLibros = el('div', { class: 'lista-descargas' });
+    const pintarLibros = () => {
+      limpiar(listaLibros);
+      for (const libro of libros) {
+        const nombre = libros.length === 1 ? reporte.nombre : libro.replace(/\.(xlsx|csv|txt)$/i, '').replace(/_/g, ' ');
+        listaLibros.appendChild(el('button', { type: 'button', class: 'descarga', onclick: async ev => {
+          const b = ev.currentTarget;
+          b.classList.add('cargando');
+          try { await descargar(`${base}/exportar?libro=${encodeURIComponent(libro)}${sinOmitidas.checked ? '&incluirOmitidas=0' : ''}`, `Libro completo de ${nombre}`, 'Todas las solapas y todas las filas.'); }
+          catch (err) { avisarError(err); } finally { b.classList.remove('cargando'); }
+        } }, el('span', { class: 'icono-archivo' }, icono('i-planilla', 'g')),
+          el('span', { class: 'datos' }, el('b', null, nombre), el('small', null, 'Libro completo · ' + datos.tablas.filter(t => t.archivo === libro).map(t => t.hoja || t.titulo).join(', '))), icono('i-bajar')));
+      }
+    };
+    sinOmitidas.addEventListener('change', pintarLibros);
+    pintarLibros();
     const final = el('input', { type: 'checkbox', checked: !!e.final, onchange: async ev => {
       try {
         const r = await api('PATCH', base, { final: ev.target.checked });
         w.e = r;
-        if (r.final) { fiesta(); aviso(`Listo: esta versión es el resultado final de ${reporte.nombre}.`, 'ok'); } else aviso('Ya no es el resultado final.', 'info');
+        aviso(r.final ? `Listo: esta versión es el resultado final de ${reporte.nombre}.` : 'Ya no es el resultado final.', r.final ? 'ok' : 'info');
       } catch (err) { avisarError(err); ev.target.checked = !ev.target.checked; }
     } });
-    cont.append(intro('i-bajar', 'Descargá el Excel trabajado: el mismo del reporte, con las columnas Estado revisión y Observaciones completas con lo que marcaste.'),
-      el('div', { class: 'grilla-2' },
-        el('div', null, el('div', { class: 'titulo-seccion', style: 'margin-top:0' }, icono('i-check-circulo'), el('h2', null, 'Resultados trabajados')),
-          el('label', { class: 'casilla', for: 'sin-omitidas', style: 'margin-bottom:8px' }, sinOmitidas, el('span', null, 'Sin las filas omitidas')), listaTrabajados),
-        el('div', null, el('div', { class: 'titulo-seccion', style: 'margin-top:0' }, icono('i-archivo'), el('h2', null, 'Archivos originales')), el('p', { class: 'muted' }, 'Tal como los produce el reporte, sin tocar.'), listaOriginales)),
+    cont.append(...[intro('i-bajar', 'Armá el Excel que necesitás: qué filas, qué estado de revisión y qué columnas. Sale con la columna Revisión y tus observaciones.'),
+      el('div', { class: 'tarjeta tarjeta-exportar' }, formulario),
+      libros.length ? el('details', { class: 'avanzadas' },
+        el('summary', null, icono('i-capas'), el('span', null, 'Libros completos del reporte ', el('span', { class: 'muted' }, '(todas las solapas y todas las filas, con tu revisión)')), icono('i-abajo', 'flecha')),
+        el('div', { class: 'contenido' }, el('label', { class: 'casilla', for: 'sin-omitidas', style: 'margin-bottom:8px' }, sinOmitidas, el('span', null, 'Sin las filas omitidas')), listaLibros)) : null,
       el('div', { class: 'pie-paso' },
         el('label', { class: 'interruptor' }, final, el('span', { class: 'riel' }), el('span', null, el('b', null, 'Resultado final'), el('br'), el('span', { class: 'muted' }, `Esta versión es la que vale para ${cierre.herramienta ? 'el registro' : 'el cierre de ' + periodoLargo(cierre.periodo).toLowerCase()}.`))),
-        el('div', { class: 'der' }, cierre.herramienta ? null : el('a', { class: 'btn fantasma', href: `/api/cierres/${encodeURIComponent(cierre.id)}/exportar` }, icono('i-caja'), el('span', null, 'Exportar el cierre completo')),
-          btn('Nueva versión', nuevaVersion(w), 'fantasma', { icono: 'i-refrescar' }), enlace(cierre.herramienta ? 'Volver a Facturas' : 'Volver al cierre', cierre.herramienta ? '#/facturas' : '#/cierre/' + encodeURIComponent(cierre.id), 'btn primario', 'i-volver'))));
+        el('div', { class: 'der' }, cierre.herramienta ? null : btn('Exportar el cierre completo', () => exportarCierre(cierre), 'fantasma', { icono: 'i-caja' }),
+          btn('Nueva versión', nuevaVersion(w), 'fantasma', { icono: 'i-refrescar' }), enlace(cierre.herramienta ? 'Volver a Facturas' : 'Volver al cierre', cierre.herramienta ? '#/facturas' : '#/cierre/' + encodeURIComponent(cierre.id), 'btn primario', 'i-volver')))].filter(Boolean));
+    armar();
+  }
+  // El cierre completo en un archivo, para compartirlo (con su tarea).
+  async function exportarCierre(cierre) {
+    try { await descargar(`/api/cierres/${encodeURIComponent(cierre.id)}/exportar`, `Cierre de ${periodoLargo(cierre.periodo)}`, 'Resultados trabajados, resumen y observaciones.'); } catch (err) { avisarError(err); }
   }
 
   // ---------------------------------------------------------------- vista: historial
@@ -1476,16 +2391,37 @@
           el('p', null, el('code', null, conf.carpetaDatos)),
           btn('Liberar espacio', async () => {
             if (!await confirmar('¿Liberar espacio?', 'Se borran los Excel agregados que ninguna versión final usa. Los resultados y las revisiones se conservan.', 'Liberar espacio')) return;
-            try { const r = await api('POST', '/api/limpieza', {}); aviso(`Se liberaron ${r.liberadosMB} MB.`, 'ok'); } catch (err) { avisarError(err); }
+            try { await tareas.correr({ clave: 'limpieza', titulo: 'Limpiando archivos sin usar' }, async () => { const r = await api('POST', '/api/limpieza', {}); return `Se liberaron ${r.liberadosMB} MB.`; }); } catch (err) { avisarError(err); }
           }, '', { icono: 'i-basura' })),
         seccion('i-info', 'La herramienta', `Versión ${app.version}.`, el('div', { class: 'acciones-fila' }, btn('Ver la guía de inicio', () => bienvenida(), '', { icono: 'i-chispa' }), btn('Cerrar la herramienta', cerrarHerramienta, 'peligro', { icono: 'i-apagar' })))));
     await pintarDefaults();
+  }
+  // Reinicia la herramienta: vuelve sola con el mismo acceso y la pantalla se recarga cuando la nueva responde.
+  async function reiniciarHerramienta() {
+    if (!await confirmar('¿Reiniciar la herramienta?', 'Se cierra y se vuelve a abrir sola en unos segundos, con lo último que se haya instalado. Lo que tenés guardado no se pierde.', 'Reiniciar', 'pregunta')) return;
+    let anterior = null;
+    try { anterior = (await api('GET', '/api/estado', undefined, { silencioso: true })).instancia; await api('POST', '/api/reiniciar', {}); } catch (err) { avisarError(err); return; }
+    if (estado.fuente) { estado.fuente.close(); estado.fuente = null; }
+    const texto = el('span', null, 'Esperando que vuelva a abrir…');
+    abrirModal({ titulo: 'Reiniciando la herramienta', iconoNombre: 'i-refrescar', cuerpo: el('p', { class: 'cargando-texto' }, el('span', { class: 'girador' }), texto) });
+    const inicio = Date.now();
+    while (Date.now() - inicio < 45000) {
+      await new Promise(r => setTimeout(r, 700));
+      try {
+        const r = await fetch('/api/estado', { credentials: 'same-origin', cache: 'no-store' });
+        if (r.ok && (await r.json()).instancia !== anterior) { location.reload(); return; }
+      } catch (err) { /* todavía no volvió */ }
+    }
+    texto.textContent = 'No volvió a abrirse sola. Abrila desde el acceso directo "Reportes de cierre".';
   }
   async function cerrarHerramienta() {
     if (!await confirmar('¿Cerrar la herramienta?', 'Para volver a abrirla, usá el acceso directo "Reportes de cierre". Igual se apaga sola después de tres horas sin uso.', 'Cerrar', 'aviso')) return;
     try {
       await api('POST', '/api/cerrar', {});
-      if (estado.fuente) estado.fuente.close();
+      if (estado.fuente) { estado.fuente.close(); estado.fuente = null; }
+      for (const d of document.querySelectorAll('dialog[open]')) d.close();
+      tareas.abrir(false);
+      $('#banda-version').classList.add('oculto');
       limpiar($('#vista')).appendChild(el('div', { class: 'vacio entrar' }, el('div', { class: 'ilustracion' }, icono('i-apagar')), el('h2', null, 'La herramienta se cerró'), el('p', null, 'Podés cerrar esta pestaña. Para volver, usá el acceso directo.')));
     } catch (err) { avisarError(err); }
   }
@@ -1518,9 +2454,14 @@
       { icono: 'i-ajustes', texto: 'Configuración', onclick: () => { location.hash = '#/configuracion'; } },
       { icono: 'i-historial', texto: 'Historial', onclick: () => { location.hash = '#/historial'; } },
       'sep',
+      { icono: 'i-refrescar', texto: 'Reiniciar la herramienta', detalle: 'Se cierra y vuelve a abrir sola', onclick: reiniciarHerramienta },
       { icono: 'i-apagar', texto: 'Cerrar la herramienta', peligro: true, onclick: cerrarHerramienta },
     ]);
   });
+  $('#btn-tareas').addEventListener('click', ev => { ev.stopPropagation(); tareas.abrir(); });
+  $('#panel-tareas .tareas-limpiar').addEventListener('click', () => tareas.sacarTerminadas());
+  $('#btn-reiniciar').addEventListener('click', () => reiniciarHerramienta());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && estado.fuente) revisarVersion(); });
   window.addEventListener('hashchange', enrutar);
   (async () => {
     try {
@@ -1528,7 +2469,12 @@
       aplicarTema(estado.conf.tema || 'claro');
     } catch (err) { /* sigue con lo local */ }
     conectarEventos();
-    actualizarIndicador();
     enrutar();
+    const st = await revisarVersion();
+    if (st) for (const o of st.origenes || []) tareas.desdeOrigen(o);
+    try {
+      const desde = Date.now() / 1000 - 12 * 3600;
+      for (const tr of await api('GET', '/api/trabajos')) if ((tr.inicio || 0) >= desde) tareas.desdeTrabajo(tr, true);
+    } catch (err) { /* el visor arranca vacío */ }
   })();
 })();

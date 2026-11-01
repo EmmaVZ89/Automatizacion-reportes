@@ -119,6 +119,11 @@ saldo Neto + impuestos" cuando no se identifica un componente concreto.
 (los demás agrupadores en facturas con alguna imputación en el mes y año de la fecha de corte, aunque la
 factura sea antigua) e `Histórico` (el resto).
 
+**Excel de origen** (pedido de quien usa el reporte, 31/10/2026): en las tres solapas, cada fila baja la fila
+del histórico de SGA que la generó (por `Fila SGA` y, con varios tramos, `Archivo`) con el encabezado del
+archivo, y las celdas observadas (las anaranjadas de la pantalla) pintadas de anaranjado aunque estén vacías,
+para pedir la corrección. Sólo se usa el histórico de SGA.
+
 ### 2. Datos obligatorios (`Control_Datos_Obligatorios`)
 
 Se aplica a líneas no pendientes y no excluidas, según la regla del concepto (`datos`):
@@ -174,8 +179,19 @@ si falta, `FechaComprobanteImputacion`; sin fecha se toman). Hay anulación tota
 opuestos y la suma queda dentro de la tolerancia. Una NC parcial no anula; un cobro que cancela la
 factura no equivale a una anulación; no se atribuye una NC a una factura por compartir sólo el aporte.
 
-Solapas `Año en curso` e `Histórico` según el año esperado del segundo servicio (si el primero no es
-visible, el año de emisión del segundo).
+Solapas por **mes** (pedido de quien usa el reporte, 31/10 y 01/11/2026), en este orden. El mes de cada
+fila es el mes esperado del segundo servicio; si no lo hay, el de `FechaFactura` (un año después cuando la
+fila es de un primer servicio, que es cuando vence el segundo).
+
+| Solapa | Filas |
+|---|---|
+| `Mes en curso` | La facturación emitida o pendiente del mes y año de la fecha de corte |
+| `No exigibles` | El mes de facturación todavía no comenzó: estado `NO_EXIGIBLE` o un mes posterior al de corte |
+| `Histórico` | Todo lo anterior al mes de corte (también los meses anteriores del año en curso), o sin mes determinable |
+
+Antes se partía por año (`Año en curso` / `Histórico`) y los servicios de años posteriores al de corte no
+iban a ninguna solapa. En Resultados las tres solapas van bajo la sección **Control de servicios
+administrativos**, y la de comprobantes abiertos bajo su propia sección, **Comprobantes abiertos**.
 
 ### 4. Saldo MORA (`Saldo_MORA`)
 
@@ -255,11 +271,11 @@ identificadores como texto. Control, Estado y Motivo van al principio (en abiert
 | `Control_Netos_Impuestos.xlsx` | `MORA` (`netos_mora`), `Mes en curso` (`netos_mes`), `Histórico` (`netos_historico`) | `FondoDeRiesgo` + `CodigoEmpresa` + `NumeroFactura` + `NumeroComprobanteImputacion` + `Fila SGA` |
 | `Control_Datos_Obligatorios.xlsx` | `Año en curso` (`datos_anio`), `Histórico` (`datos_historico`) | `FondoDeRiesgo` + `CodigoEmpresa` + `NumeroFactura` + `NumeroComprobanteImputacion` + `Control` |
 | `Control_Concepto_Agrupador.xlsx` | `Año en curso` (`agrupador_anio`), `Histórico` (`agrupador_historico`) | ídem datos obligatorios |
-| `Control_Servicios_Administrativos.xlsx` | `Año en curso` (`servicios_anio`), `Histórico` (`servicios_historico`) | `FondoDeRiesgo` + `CodigoEmpresa` + `NumeroDeAporte` + `Control` |
+| `Control_Servicios_Administrativos.xlsx` | `Mes en curso` (`servicios_mes`), `No exigibles` (`servicios_noexigibles`), `Histórico` (`servicios_historico`) | `FondoDeRiesgo` + `CodigoEmpresa` + `NumeroDeAporte` + `Control` |
 | `Comprobantes_Abiertos.xlsx` | `Comprobantes abiertos` (`abiertos`) | `FondoDeRiesgo` + `CodigoEmpresa` + `Comprobante` |
 | `Saldo_MORA.xlsx` | `Saldo por fondo` (`saldo_mora`) | `FondoDeRiesgo` |
 | `reglas_propuestas.json` | — | Propuestas de datos y agrupador por concepto, con cantidades |
-| `ejecucion.json` | — | Versión, parámetros, archivos, cantidades por salida y solapa, servicios futuros no exigibles |
+| `ejecucion.json` | — | Versión, parámetros, archivos, cantidades por salida y solapa, filas de datos obligatorios y agrupador con fecha posterior al año de corte (no van a ninguna solapa) |
 
 ## Limitaciones y advertencias
 
@@ -287,8 +303,8 @@ identificadores como texto. Control, Estado y Motivo van al principio (en abiert
   Corregir / Revisar" y las clasificaciones de abiertos.
 - La consolidación de netos (una fila por línea original; saldos como contexto), el bloque original
   `CodigoEmpresa`…`ImporteIIBB` intacto y las celdas anaranjadas.
-- El criterio de solapas (MORA / Mes en curso / Histórico; Año en curso / Histórico) y el orden de las
-  filas dentro de cada una.
+- El criterio de solapas (MORA / Mes en curso / Histórico; Año en curso / Histórico; en servicios, Mes en
+  curso / No exigibles / Histórico) y el orden de las filas dentro de cada una.
 
 Cualquier cambio en esto exige correr `herramientas/regresion_legado.py controles_sga` y anotar el
 resultado en `docs/regresion.md`.

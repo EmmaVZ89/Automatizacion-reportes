@@ -171,14 +171,21 @@ def hoja_a_dicts(libro):
     return salida
 
 
+SERVICIOS = 'Control_Servicios_Administrativos'
+HOJAS_SERVICIOS = ['Mes en curso', 'No exigibles', 'Histórico']
+
+
 class ControlesSgaDoradoTests(unittest.TestCase):
     def test_igual_a_dorado_seis_libros(self):
         marcas = json.loads((DORADOS / 'marcas.json').read_text(encoding='utf-8'))
         with carpeta_temporal() as d:
             fx = fixture_xlsx(d / 'historico.xlsx')
-            correr([fx], d / 'salidas')
+            reports, _, _ = correr([fx], d / 'salidas')
             for libro in LIBROS:
                 leido = leer_libro(d / 'salidas' / f'{libro}.xlsx')
+                if libro == SERVICIOS:
+                    self._servicios_por_mes(leido, reports)
+                    continue
                 for hoja, datos in leido.items():
                     with self.subTest(libro=libro, hoja=hoja):
                         esperado = leer_dorado(libro, hoja)
@@ -189,7 +196,40 @@ class ControlesSgaDoradoTests(unittest.TestCase):
             ejecucion = json.loads((d / 'salidas' / 'ejecucion.json').read_text(encoding='utf-8'))
             self.assertEqual(ejecucion.pop('archivo'), 'historico.xlsx')
             self.assertEqual(ejecucion.pop('archivos'), ['historico.xlsx'])
-            self.assertEqual(ejecucion, json.loads((DORADOS / 'ejecucion.json').read_text(encoding='utf-8')))
+            # Servicios por mes (cambio pedido): los futuros dejan de omitirse y pasan a "No exigibles".
+            esperado = json.loads((DORADOS / 'ejecucion.json').read_text(encoding='utf-8'))
+            futuros = esperado['futuros_no_exigibles_omitidos'].pop(SERVICIOS)
+            esperado['salidas'][SERVICIOS] += futuros
+            esperado['solapas'][SERVICIOS] = {s['name']: len(s['rows']) for r in reports if r['name'] == SERVICIOS for s in r['sheets']}
+            self.assertEqual(ejecucion, esperado)
+
+    def _servicios_por_mes(self, leido, reports):
+        """Las filas del legado (Año en curso + Histórico) están todas, cada una en una sola solapa nueva; las únicas
+        de más son las que el legado omitía por futuras, y van a No exigibles. Cada solapa respeta su mes."""
+        self.assertEqual(list(leido), HOJAS_SERVICIOS)
+        legado = [tuple(f) for hoja in ('Año en curso', 'Histórico') for f in leer_dorado(SERVICIOS, hoja)[5:]]
+        nuevas = {hoja: [tuple(f) for f in leido[hoja]['celdas'][5:]] for hoja in HOJAS_SERVICIOS}
+        todas = [f for filas in nuevas.values() for f in filas]
+        for fila in legado:
+            self.assertEqual(todas.count(fila), legado.count(fila), fila)
+        extra = [f for f in todas if f not in legado]
+        self.assertEqual(len(extra), 2)
+        self.assertTrue(all(f in nuevas['No exigibles'] for f in extra))
+        self.assertEqual(leido['Mes en curso']['celdas'][4], leer_dorado(SERVICIOS, 'Año en curso')[4])
+        servicio = next(r for r in reports if r['name'] == SERVICIOS)
+        columnas = servicio['sheets'][0]['columns']
+        i_mes, i_estado = columnas.index('Mes esperado'), columnas.index('Estado')
+        for hoja in servicio['sheets']:
+            for fila in hoja['rows']:
+                if fila[i_mes]:
+                    mes = fila[i_mes]
+                    if hoja['name'] == 'Mes en curso':
+                        self.assertEqual(mes, '2026-10')
+                    elif hoja['name'] == 'Histórico':
+                        self.assertLess(mes, '2026-10')
+                    else:
+                        self.assertTrue(mes > '2026-10' or fila[i_estado] == 'NO_EXIGIBLE')
+            self.assertEqual(leido[hoja['name']]['naranja'], [])
 
     def test_sin_tramos_cada_hoja_tiene_filas(self):
         with carpeta_temporal() as d:
@@ -199,7 +239,9 @@ class ControlesSgaDoradoTests(unittest.TestCase):
             for r in reports:
                 for s in r['sheets']:
                     self.assertGreater(len(s['rows']), 0, f"{r['name']} / {s['name']}")
-            self.assertEqual(summary['futuros_no_exigibles_omitidos'], {'Control_Servicios_Administrativos': 2})
+            # Servicios administrativos ya no omite los futuros: van a la solapa No exigibles.
+            self.assertEqual(summary['futuros_no_exigibles_omitidos'], {})
+            self.assertEqual([s['name'] for r in reports if r['name'] == 'Control_Servicios_Administrativos' for s in r['sheets']], HOJAS_SERVICIOS)
             self.assertEqual(rules['COMISION FRG']['datos'], 'EXP_OP')
             self.assertFalse(rules['COMISION FRG']['datos_confirmados'])
 
@@ -323,7 +365,7 @@ class ControlesSgaDoradoTests(unittest.TestCase):
             self.assertTrue(any(f['NumeroFactura'] == 'CH-20190722105522839' for f in netos))
             # Con la regla mensual desde 2025-01-01, el segundo servicio de 2026-02 ya no es "histórico"
             _, _, _ = correr([fx], d / 'b', {'inicio_regla_mensual': '2025-01-01'})
-            serv = hoja_a_dicts(leer_libro(d / 'b' / 'Control_Servicios_Administrativos.xlsx'))['Año en curso']
+            serv = [f for filas in hoja_a_dicts(leer_libro(d / 'b' / 'Control_Servicios_Administrativos.xlsx')).values() for f in filas]
             fila = next(f for f in serv if f['NumeroDeAporte'] == 'A103')
             self.assertEqual(fila['Estado'], 'OK')
             # Si FI- también es oficial, la factura abierta FI-0002 deja de listarse
@@ -378,7 +420,7 @@ class EjecutarTests(unittest.TestCase):
             self.assertEqual(json.loads(valores['_marcas']), ['ImporteNetoGravado', 'ImporteIVA', 'Saldo neto', 'Saldo IVA'])
             self.assertEqual(valores['_clave'].split('\x1f'), ['FONDO A', '105', 'FI-0008', 'RC-0005', '15'])
             # Las fechas de la solapa de servicios también van en texto ISO
-            fechas = [r[0] for r in con.execute("SELECT c9 FROM t_servicios_anio")]
+            fechas = [r[0] for t in ('servicios_mes', 'servicios_historico', 'servicios_noexigibles') for r in con.execute(f"SELECT c9 FROM t_{t}")]
             self.assertTrue(all(f == '' or len(f) == 10 for f in fechas), fechas)
             # Comprobantes abiertos: la fecha faltante queda marcada
             marcas = [json.loads(r[0]) for r in con.execute("SELECT _marcas FROM t_abiertos WHERE _marcas IS NOT NULL")]

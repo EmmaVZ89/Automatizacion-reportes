@@ -62,6 +62,10 @@ def main(argv=None):
         volcador.tabla('revisar', columnas, filas_revisar, SALIDAS['revisar']['clave'], titulo=SALIDAS['revisar']['titulo'])
         volcador.tabla('resumen', ['Concepto', 'Valor'], [[concepto, valor] for concepto, valor in resumen.items()],
                        SALIDAS['resumen']['clave'], titulo=SALIDAS['resumen']['titulo'])
+        with (destino / SALIDAS['pedido_sistemas']['archivo']).open(encoding='utf-8-sig', newline='') as f:
+            lector = csv.reader(f, delimiter=';')
+            columnas_pedido = next(lector)
+            volcador.tabla('pedido_sistemas', columnas_pedido, list(lector), SALIDAS['pedido_sistemas']['clave'], titulo=SALIDAS['pedido_sistemas']['titulo'])
     protocolo.resumen({
         'reporte': REPORTE['codigo'],
         'sga': [p.name for p in sga],

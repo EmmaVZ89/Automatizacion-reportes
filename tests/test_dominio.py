@@ -234,7 +234,7 @@ class DominioTests(unittest.TestCase):
                 v.tabla('revisar', ['ID SGA', 'Motivo'], [['1', 'a'], ['2', 'b']], clave=['ID SGA', 'Motivo'])
                 v.tabla('resumen', ['Concepto', 'Valor'], [['x', '1'], ['y', '2'], ['z', '3']], clave=['Concepto'])
             dom.actualizar_estado(e['id'], 'ok')
-            self.assertEqual(dom.tablas_informativas(e['id']), {'resumen'})
+            self.assertEqual(dom.tablas_informativas(e['id']), {'resumen', 'pedido_sistemas'})
             self.assertEqual(dom.resumen_revision(e['id']), {'pendientes': 2, 'revisadas': 0, 'omitidas': 0})
             dom.tablas(e['id']).marcar('revisar', [0, 1], 'revisada')
             self.assertEqual(dom.guardar_triage(e['id']), {'pendientes': 0, 'revisadas': 2, 'omitidas': 0})

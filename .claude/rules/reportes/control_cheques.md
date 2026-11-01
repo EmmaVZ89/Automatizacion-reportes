@@ -12,9 +12,9 @@ paths: ["**/reportes/control_cheques/**"]
 
 ## Archivos de la carpeta
 
-- `reporte.py`: definición `REPORTE` (entradas `sga`/`erp`, parámetros de prefijos, equivalencias y exclusiones, salidas `revisar` y `resumen`).
-- `motor.py`: copia de `legado/control_cheques/control_cheques.py` con parámetros y tramos; usa openpyxl de `vendor/`.
-- `ejecutar.py`: punto de entrada del subproceso; convierte `Resumen.txt` en la tabla `resumen`.
+- `reporte.py`: definición `REPORTE` (entradas `sga`/`erp`, parámetros de prefijos, equivalencias y exclusiones, salidas `revisar`, `pedido_sistemas` (informativa) y `resumen`).
+- `motor.py`: copia de `legado/control_cheques/control_cheques.py` con parámetros y tramos; usa openpyxl de `vendor/`. Agrega las columnas opcionales `Fecha` y `Fecha de depósito` (se buscan por alias normalizado; si faltan, salen vacías) y `Pedido_a_sistemas.csv` (motivo `Diferencia de estado`). La regresión compara el CSV sin esas dos columnas.
+- `ejecutar.py`: punto de entrada del subproceso; convierte `Resumen.txt` en la tabla `resumen` y `Pedido_a_sistemas.csv` en `pedido_sistemas`.
 
 ## Contrato de `ejecutar.py`
 

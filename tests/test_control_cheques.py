@@ -64,6 +64,15 @@ def generar_fixtures(carpeta, filas_erp=None, nombre_erp='tesoreria_erp.xlsx', f
     return sga, erp
 
 
+COLUMNAS_NUEVAS = ('Fecha', 'Fecha de depósito')
+
+
+def sin_fechas(filas):
+    """Las filas sin las dos columnas que pidió quien usa el reporte (el legado no las tiene)."""
+    quedan = [i for i, c in enumerate(filas[0]) if c not in COLUMNAS_NUEVAS]
+    return [[f[i] for i in quedan] for f in filas]
+
+
 def _leer_csv(ruta):
     with Path(ruta).open(encoding='utf-8-sig', newline='') as f:
         return list(csv.reader(f, delimiter=';'))
@@ -85,7 +94,7 @@ class ControlChequesTests(unittest.TestCase):
         with carpeta_temporal() as tmp:
             sga, erp = generar_fixtures(tmp)
             motor.controlar([sga], [erp], tmp / 'salida', {}, informar=Silencio())
-            self.assertEqual((tmp / 'salida' / 'Cheques_para_revisar.csv').read_bytes(), (DORADOS / 'Cheques_para_revisar.csv').read_bytes())
+            self.assertEqual(sin_fechas(_leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv')), _leer_csv(DORADOS / 'Cheques_para_revisar.csv'))
             self.assertEqual(_lineas_resumen(tmp / 'salida' / 'Resumen.txt'), _lineas_resumen(DORADOS / 'Resumen.txt'))
 
     def test_tramos_erp_se_indexan_juntos(self):
@@ -95,7 +104,7 @@ class ControlChequesTests(unittest.TestCase):
             _, erp2 = generar_fixtures(tmp, filas_erp=FILAS_ERP[6:], nombre_erp='erp_2.xlsx')
             resumen = motor.controlar([sga], [erp1, erp2], tmp / 'salida', {}, informar=Silencio())
             dorado = _leer_csv(DORADOS / 'Cheques_para_revisar.csv')
-            nuevo = _leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv')
+            nuevo = sin_fechas(_leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv'))
             self.assertEqual(nuevo[0], dorado[0][:11] + ['Archivos ERP'])
             # Sin las columnas de fila/archivo ERP (la fila cambia al partir el archivo) el resultado es el mismo.
             self.assertEqual([f[:10] for f in nuevo], [f[:10] for f in dorado])
@@ -114,10 +123,50 @@ class ControlChequesTests(unittest.TestCase):
             sga2, _ = generar_fixtures(tmp, filas_sga=FILAS_SGA[4:], nombre_sga='sga_2.xlsx')
             motor.controlar([sga1, sga2], [erp], tmp / 'salida', {}, informar=Silencio())
             dorado = _leer_csv(DORADOS / 'Cheques_para_revisar.csv')
-            nuevo = _leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv')
+            nuevo = sin_fechas(_leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv'))
             self.assertEqual(nuevo[0], dorado[0][:10] + ['Archivo SGA', 'Filas ERP'])
             self.assertEqual([f[:9] + f[11:] for f in nuevo], [f[:9] + f[10:] for f in dorado])
             self.assertEqual([f[10] for f in nuevo[1:]], ['sga_1.xlsx', 'sga_1.xlsx'] + ['sga_2.xlsx'] * (len(nuevo) - 3))
+
+    def test_fechas_y_pedido_a_sistemas(self):
+        from datetime import datetime
+        with carpeta_temporal() as tmp:
+            sga, _ = generar_fixtures(tmp)
+            # ERP con la columna nueva: fecha de depósito en algunas filas (como fecha de Excel o como texto)
+            filas = [f + [datetime(2026, 1, 10) if i % 2 == 0 else ''] for i, f in enumerate(FILAS_ERP)]
+            erp = xlsx_openpyxl(tmp / 'erp_con_deposito.xlsx', [('Valores', [ENCABEZADO_ERP + ['Fecha de Depósito']] + filas)])
+            motor.controlar([sga], [erp], tmp / 'salida', {}, informar=Silencio())
+            revisar = _leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv')
+            enc = revisar[0]
+            self.assertEqual(enc[enc.index('Estado ERP') + 1:enc.index('Estado ERP') + 3], ['Fecha', 'Fecha de depósito'])
+            por_id = {f[enc.index('ID SGA')]: f for f in revisar[1:]}
+            diferencias = [f for f in revisar[1:] if f[0] == 'Diferencia de estado']
+            self.assertTrue(diferencias)
+            for f in diferencias:
+                erp_fila = next(x for i, x in enumerate(FILAS_ERP) if x[0] == f[enc.index('ID ERP')])
+                i_erp = FILAS_ERP.index(erp_fila)
+                self.assertEqual(f[enc.index('Fecha')], erp_fila[1])
+                self.assertEqual(f[enc.index('Fecha de depósito')], '10/01/2026' if i_erp % 2 == 0 else '')
+            pedido = _leer_csv(tmp / 'salida' / 'Pedido_a_sistemas.csv')
+            self.assertEqual(pedido[0], ['ID SGA', 'Fecha de depósito'])
+            self.assertEqual(pedido[1:], [[f[enc.index('ID SGA')], f[enc.index('Fecha de depósito')]] for f in diferencias])
+            self.assertTrue(por_id)
+
+    def test_sin_columna_de_deposito_sale_vacia_y_lo_avisa(self):
+        class Anota(Silencio):
+            def __init__(self):
+                self.lineas = []
+
+            def log(self, m):
+                self.lineas.append(m)
+        with carpeta_temporal() as tmp:
+            sga, erp = generar_fixtures(tmp)
+            anota = Anota()
+            motor.controlar([sga], [erp], tmp / 'salida', {}, informar=anota)
+            revisar = _leer_csv(tmp / 'salida' / 'Cheques_para_revisar.csv')
+            i = revisar[0].index('Fecha de depósito')
+            self.assertEqual({f[i] for f in revisar[1:]}, {''})
+            self.assertTrue(any('Fecha de depósito' in l for l in anota.lineas))
 
     def test_importe_numerico_con_coma(self):
         with carpeta_temporal() as tmp:
@@ -163,15 +212,16 @@ class ControlChequesTests(unittest.TestCase):
             eventos = [json.loads(l) for l in proceso.stdout.splitlines() if l.strip()]
             tipos = [e['t'] for e in eventos]
             self.assertIn('paso', tipos)
-            self.assertEqual([e for e in eventos if e['t'] == 'tabla'], [{'t': 'tabla', 'tabla': 'revisar', 'filas': 7}, {'t': 'tabla', 'tabla': 'resumen', 'filas': 14}])
+            self.assertEqual([e for e in eventos if e['t'] == 'tabla'], [{'t': 'tabla', 'tabla': 'revisar', 'filas': 7}, {'t': 'tabla', 'tabla': 'resumen', 'filas': 14},
+                                                                         {'t': 'tabla', 'tabla': 'pedido_sistemas', 'filas': 2}])
             resumen = [e for e in eventos if e['t'] == 'resumen'][-1]['datos']
             self.assertEqual(resumen['total_para_revisar'], 7)
             self.assertEqual(resumen['sga'], ['cheques_sga.xlsx'])
-            self.assertEqual((trabajo / 'salidas' / 'Cheques_para_revisar.csv').read_bytes(), (DORADOS / 'Cheques_para_revisar.csv').read_bytes())
+            self.assertEqual(sin_fechas(_leer_csv(trabajo / 'salidas' / 'Cheques_para_revisar.csv')), _leer_csv(DORADOS / 'Cheques_para_revisar.csv'))
             con = sqlite3.connect(str(trabajo / 'resultados.sqlite'))
             try:
                 tablas = dict(con.execute('SELECT tabla, filas FROM _tablas').fetchall())
-                self.assertEqual(tablas, {'revisar': 7, 'resumen': 14})
+                self.assertEqual(tablas, {'revisar': 7, 'resumen': 14, 'pedido_sistemas': 2})
                 columnas = [r[0] for r in con.execute("SELECT nombre FROM _columnas WHERE tabla='revisar' ORDER BY posicion")]
                 self.assertEqual(columnas, motor.CAMPOS)
                 claves = [r[0] for r in con.execute('SELECT _clave FROM t_revisar ORDER BY _fila')]

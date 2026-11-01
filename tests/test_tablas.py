@@ -103,6 +103,33 @@ class TablasTests(unittest.TestCase):
             self.assertEqual(r3['aplicadas'], 2)
             self.assertEqual(Tablas(d / 'v3.sqlite').consultar('general')['filas'][0]['_estado'], 'pendiente')
 
+    def test_marcas_pasan_a_otra_tabla_del_mismo_libro(self):
+        # Servicios por mes: la tabla del año en curso ya no existe y una fila del histórico pasó a no exigibles.
+        cols = ['Fondo', 'Aporte', 'Control']
+        with carpeta_temporal() as d:
+            with mock.patch.object(protocolo, 'ACTIVO', False), Volcador(d / 'v1.sqlite') as v:
+                v.tabla('servicios_anio', cols, [['G', 'A1', 'S'], ['G', 'A2', 'S']], clave=cols)
+                v.tabla('servicios_historico', cols, [['G', 'A3', 'S']], clave=cols)
+            t1 = Tablas(d / 'v1.sqlite')
+            t1.marcar('servicios_anio', [0], 'omitida', obs='nota')
+            t1.marcar('servicios_anio', [1], 'revisada')
+            t1.marcar('servicios_historico', [0], 'revisada')
+            triage = t1.triage()
+            for nombre in ('v2.sqlite', 'v3.sqlite'):
+                with mock.patch.object(protocolo, 'ACTIVO', False), Volcador(d / nombre) as v:
+                    v.tabla('servicios_mes', cols, [['G', 'A1', 'S']], clave=cols)
+                    v.tabla('servicios_noexigibles', cols, [['G', 'A3', 'S']], clave=cols)
+                    v.tabla('servicios_historico', cols, [['G', 'A2', 'S']], clave=cols)
+            self.assertEqual(Tablas(d / 'v2.sqlite').aplicar_triage(triage, origen='version'), {'aplicadas': 0, 'sin_destino': 3})
+            hermanas = {'servicios_anio': ['servicios_mes', 'servicios_noexigibles', 'servicios_historico'],
+                        'servicios_historico': ['servicios_mes', 'servicios_noexigibles']}
+            t3 = Tablas(d / 'v3.sqlite')
+            self.assertEqual(t3.aplicar_triage(triage, origen='version', hermanas=hermanas), {'aplicadas': 3, 'sin_destino': 0})
+            estado = lambda tabla: [(f['_estado'], f['_obs']) for f in t3.consultar(tabla)['filas']]
+            self.assertEqual(estado('servicios_mes'), [('omitida', 'nota')])
+            self.assertEqual(estado('servicios_historico'), [('revisada', '')])
+            self.assertEqual(estado('servicios_noexigibles'), [('revisada', '')])
+
     def test_orden_o_columna_inexistente_lanza_valueerror(self):
         with carpeta_temporal() as d:
             volcar_ejemplo(d / 'r.sqlite')

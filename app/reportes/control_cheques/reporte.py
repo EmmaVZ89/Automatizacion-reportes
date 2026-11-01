@@ -30,6 +30,8 @@ REPORTE = {
     'salidas': [
         {'tabla': 'revisar', 'titulo': 'Cheques para revisar', 'archivo': 'Cheques_para_revisar.csv', 'clave': ['ID SGA', 'Motivo'], 'principal': True},
         {'tabla': 'resumen', 'titulo': 'Resumen', 'archivo': 'Resumen.txt', 'clave': ['Concepto'], 'revisable': False},
+        # ID de SGA y fecha de depósito de los cheques con diferencia de estado, para pedir la corrección a sistemas.
+        {'tabla': 'pedido_sistemas', 'titulo': 'Pedido a sistemas', 'archivo': 'Pedido_a_sistemas.csv', 'clave': ['ID SGA'], 'revisable': False},
     ],
-    'archivos': ['Cheques_para_revisar.csv', 'Resumen.txt'],
+    'archivos': ['Cheques_para_revisar.csv', 'Resumen.txt', 'Pedido_a_sistemas.csv'],
 }

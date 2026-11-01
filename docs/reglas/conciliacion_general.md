@@ -190,6 +190,20 @@ esa fecha.
   el del archivo recibido.
 - `Resumen.json` lleva `"version": "1.5"`.
 
+## En la herramienta
+
+- **Filas para revisar.** Las filas con `Resultado = COINCIDE` no cuentan como pendientes (`revisar` en
+  `reporte.py`). Se ven en la grilla con el filtro Todas, marcadas "No requiere", y se pueden marcar igual.
+- **Vista por defecto.** `Resultado` va primero, al lado de la revisión. `Filas SGA`, `Filas ERP`, `Origen SGA
+  (primeras 5)`, `Origen ERP (primeras 5)`, `Estado revision` y `Fondo` arrancan ocultas; los datos siguen en la
+  fila y en las exportaciones con "todas las columnas".
+- **Excel de origen de una fila** (`origen.py`). Toma de `trazabilidad.sqlite` todas las filas de SGA y de ERP con
+  la clave de la fila: mismo `Cliente` y `Comprobante`, y tipo interno según el `Tipo` visible (`PENDIENTE` es
+  `MP`; `RC-X`, `RC-R`, `RC-O`, `OP-X`, `SUBRECIBO` o una combinación con " / " son `SR` u `OPX`; el resto, el
+  mismo tipo). Arma una hoja con el encabezado y las filas de cada archivo de SGA, dos filas libres y el
+  encabezado y las filas de cada archivo de ERP, con los valores, formatos de número y anchos del original. Un
+  lado sin filas no aparece. A diferencia de `Origen SGA/ERP (primeras 5)`, trae todas las filas.
+
 ## Limitaciones y advertencias
 
 - En alcance `abiertos`, que un documento no figure en ERP se toma como saldo ERP cero (cambio 1 de la 1.5):

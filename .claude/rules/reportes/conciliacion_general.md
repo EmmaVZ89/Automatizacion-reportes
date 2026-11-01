@@ -17,6 +17,8 @@ paths: ["**/reportes/conciliacion_general/**"]
 - `motor.py`: copia de `legado/conciliacion_general/conciliar.py` (v1.4) con parámetros explícitos, tramos y los cambios de la 1.5; escribe el CSV de respaldo, `Resumen.json`, `trazabilidad.sqlite`.
 - `excel.py`: escritor XLSX propio (sin openpyxl) que arma `Conciliacion_general.xlsx` con las solapas Resumen y Conciliación general; `LABELS` renombra tres estados.
 - `ejecutar.py`: punto de entrada del subproceso.
+- `origen.py`: filas de origen de una fila del resultado, leídas de `Respaldo_tecnico/trazabilidad.sqlite` (el `Tipo` visible se traduce al tipo interno: `PENDIENTE` → `MP`; `RC-X`, `OP-X`, `SUBRECIBO`… → `SR`/`OPX`). Lo usa `app/origenes.py` para el Excel de origen; no cambia la matemática.
+- En `reporte.py`, la salida `general` declara `revisar` (las filas `COINCIDE` no cuentan como pendientes), `vista` (Resultado primero; columnas técnicas ocultas) y `origen`.
 
 ## Contrato de `ejecutar.py`
 

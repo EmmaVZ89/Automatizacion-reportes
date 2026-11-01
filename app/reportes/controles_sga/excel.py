@@ -104,6 +104,20 @@ def sheet(name, columns, records, note):
         widths.append(44 if f in ('Qué hay que corregir','Motivo') else 30 if f in ('Control','Estado','Clasificación','Archivo') else 38 if f in ('RazonSocial','Concepto','ConceptoFacturacionImputacion','Conceptos') else 25 if f in ('NumeroFactura','NumeroComprobanteImputacion','Comprobante','Factura primero','Factura segundo') else 19 if f in MONEY or f in DATEFIELDS else 17)
     return {'name':name,'columns':columns,'rows':rows,'formats':formats,'orange':orange,'widths':widths,'note':note,'freeze':2 if columns[0]=='Control' else 1}
 
+def mensual_servicios(records, corte):
+    """Servicios administrativos por mes (pedido de quien usa el reporte, 31/10 y 01/11/2026): Mes en curso (lo
+    emitido o pendiente del mes de corte), No exigibles (el mes de facturación todavía no comenzó: meses posteriores
+    o estado NO_EXIGIBLE) e Histórico (meses anteriores, incluido el resto del año en curso, o sin mes). Antes se
+    partía por año y los posteriores al año de corte quedaban fuera de las dos vistas."""
+    actual=(corte.year,corte.month)
+    mes=[];historico=[];no_exigibles=[]
+    for r in records:
+        m=r.get('_mes')
+        if r.get('Estado')=='NO_EXIGIBLE' or (m is not None and m>actual):no_exigibles.append(r)
+        elif m==actual:mes.append(r)
+        else:historico.append(r)
+    return mes,historico,no_exigibles
+
 def annual(records, corte, yearof):
     current=[];history=[];future=[]
     for r in records:
@@ -200,11 +214,17 @@ def build_reports(rows, results, corte, varios_tramos=False):
                   'Mes esperado':ob.get('MesEsperado'),'NC aplicada':ob.get('NotasCredito'),'Importe NC':ob.get('ImporteNC')})
         if ob['Control']=='SIN_ANTECEDENTE':r['Motivo']='No se ve el primer servicio en el reporte. Puede estar cancelado y omitido del historico.'
         if ob['Control']=='FACTURA_ANULADA':r['Motivo']='Anulada totalmente por NC aplicada; no cuenta como servicio vigente ni duplicado.'
-        r['_year']=int(ob['MesEsperado'][:4]) if ob.get('MesEsperado') else (c.dt(ob['FechaFactura']).year+(1 if first else 0) if c.dt(ob['FechaFactura']) else None)
+        # Mes al que corresponde: el mes esperado del segundo servicio; si no lo hay, el de la factura (un año después
+        # para un primer servicio, que es cuando vence el segundo).
+        fecha=c.dt(ob['FechaFactura'])
+        r['_mes']=(int(ob['MesEsperado'][:4]),int(ob['MesEsperado'][5:7])) if ob.get('MesEsperado') else ((fecha.year+(1 if first else 0),fecha.month) if fecha else None)
         service.append(r)
-    cur,hist,future=annual(service,corte,lambda r:r['_year'])
+    mes,hist,no_exigibles=mensual_servicios(service,corte)  # solapas en el orden pedido: mes, no exigibles, histórico
     cols=con_archivo(['Control','Estado','Motivo','FondoDeRiesgo','CodigoEmpresa','CUIT','RazonSocial','NumeroDeAporte','Factura primero','Fecha primero','Factura segundo','Fecha segundo','Mes esperado','NC aplicada','Importe NC','FilaOrigen'],varios_tramos)
-    reports.append({'name':'Control_Servicios_Administrativos','sheets':[sheet('Año en curso',cols,cur,f'Segundo servicio correspondiente a {corte.year}. Sin primer visible: se clasifica por fecha del segundo.'),sheet('Histórico',cols,hist,'Servicios correspondientes a años anteriores. Los futuros no exigibles quedan fuera de estas dos vistas.')],'future_omitted':len(future)})
+    reports.append({'name':'Control_Servicios_Administrativos','sheets':[
+        sheet('Mes en curso',cols,mes,f'Servicios que corresponden a {corte:%m/%Y}. Sin primer visible: se clasifica por la fecha del segundo.'),
+        sheet('No exigibles',cols,no_exigibles,f'Servicios de meses posteriores a {corte:%m/%Y}: todavía no se pueden exigir.'),
+        sheet('Histórico',cols,hist,f'Servicios que correspondían a meses anteriores a {corte:%m/%Y}, o sin mes determinable.')]})
     opened=[]
     for ob in results['Comprobantes_Abiertos']:
         r=dict(ob);r['Clasificación']=r['Clasificacion'];r['Comprobante']=r.get('ComprobanteAbierto','')

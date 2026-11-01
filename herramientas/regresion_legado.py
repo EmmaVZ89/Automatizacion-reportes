@@ -187,6 +187,54 @@ def _comparar_xlsx(a, b):
         lb.close()
 
 
+SERVICIOS = 'Control_Servicios_Administrativos'
+# Cambios acordados con quien usa los reportes (31/10/2026); se verifican explicando cada diferencia.
+COLUMNAS_NUEVAS_CHEQUES = ('Fecha', 'Fecha de depósito')
+
+
+def _filas_xlsx(ruta, hojas, desde=6):
+    import openpyxl
+    libro = openpyxl.load_workbook(ruta, read_only=True)
+    try:
+        return {h: [tuple(f) for f in libro[h].iter_rows(min_row=desde, values_only=True) if any(v is not None for v in f)]
+                for h in hojas if h in libro.sheetnames}, list(libro.sheetnames)
+    finally:
+        libro.close()
+
+
+def _comparar_servicios(a, b):
+    """Servicios administrativos por mes: toda fila del legado (Año en curso + Histórico) está una vez en las solapas
+    nuevas, y las de más (las futuras, que el legado omitía) están en No exigibles."""
+    viejas, _ = _filas_xlsx(a, ('Año en curso', 'Histórico'))
+    nuevas, hojas = _filas_xlsx(b, ('Mes en curso', 'No exigibles', 'Histórico'))
+    if hojas != ['Mes en curso', 'No exigibles', 'Histórico']:
+        return [f'hojas esperadas Mes en curso / No exigibles / Histórico; hay {hojas}']
+    legado = [f for filas in viejas.values() for f in filas]
+    todas = [f for filas in nuevas.values() for f in filas]
+    diferencias = [f'fila del legado ausente o repetida: {f}' for f in set(legado) if todas.count(f) != legado.count(f)]
+    diferencias += [f'fila nueva fuera de No exigibles: {f}' for f in todas if f not in legado and f not in nuevas['No exigibles']]
+    return diferencias[:20]
+
+
+def _comparar_cheques(a, b):
+    """Cheques para revisar: igual al legado sin las columnas nuevas Fecha y Fecha de depósito."""
+    import csv
+    def leer(ruta, quitar=()):
+        with Path(ruta).open(encoding='utf-8-sig', newline='') as f:
+            filas = list(csv.reader(f, delimiter=';'))
+        if not filas:
+            return filas
+        quedan = [i for i, c in enumerate(filas[0]) if c not in quitar]
+        return [[f[i] if i < len(f) else '' for i in quedan] for f in filas]
+    va, vb = leer(a), leer(b, COLUMNAS_NUEVAS_CHEQUES)
+    if va == vb:
+        return []
+    for n, (x, y) in enumerate(zip(va, vb), 1):
+        if x != y:
+            return [f'fila {n}: {x} vs {y}']
+    return [f'cantidad de filas: {len(va)} vs {len(vb)}']
+
+
 def comparar_conciliacion(a, b, alcance):
     """Conciliación general v1.5: las diferencias con el legado tienen que estar explicadas por los cambios
     acordados (herramientas/cambios_conciliacion.py). Devuelve (no_explicadas, explicadas)."""
@@ -220,12 +268,22 @@ def comparar_carpetas(a, b, codigo='', alcance=None):
         if pb is None:
             diferencias.append(f'{rel}: no existe en {b}')
             continue
-        if pa.suffix.lower() == '.xlsx':
+        if codigo == 'controles_sga' and pa.name == SERVICIOS + '.xlsx':
+            diferencias.extend(f'{rel}: {d}' for d in _comparar_servicios(pa, pb))
+        elif codigo == 'control_cheques' and pa.name == 'Cheques_para_revisar.csv':
+            diferencias.extend(f'{rel}: {d}' for d in _comparar_cheques(pa, pb))
+        elif pa.suffix.lower() == '.xlsx':
             diferencias.extend(f'{rel}: {d}' for d in _comparar_xlsx(pa, pb))
         elif pa.suffix.lower() == '.json':
             ignorar = IGNORAR_JSON.get(codigo, set())
             ja = _normalizar_json(json.loads(pa.read_text(encoding='utf-8-sig')), ignorar)
             jb = _normalizar_json(json.loads(pb.read_text(encoding='utf-8-sig')), ignorar)
+            if codigo == 'controles_sga' and pa.name == 'ejecucion.json':
+                # Servicios por mes: cambian sus cantidades por solapa y ya no hay futuros omitidos.
+                for j in (ja, jb):
+                    for clave in ('salidas', 'solapas', 'futuros_no_exigibles_omitidos'):
+                        if isinstance(j.get(clave), dict):
+                            j[clave].pop(SERVICIOS, None)
             if ja != jb:
                 diferencias.append(f'{rel}: JSON distinto')
         else:

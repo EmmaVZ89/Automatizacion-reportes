@@ -50,6 +50,7 @@ class Servidor:
         self.dir_datos = Path(dir_datos)
         self.raiz = Path(raiz)
         self.token = token or nuevo_token()
+        self.instancia = nuevo_token()[:16]  # cambia en cada arranque (la pantalla sabe así que ya reinició)
         self.probar_venv = probar_venv
         self.inactividad_segundos = inactividad_segundos
         self.al_cerrar = al_cerrar
@@ -62,7 +63,11 @@ class Servidor:
         self.bus = Bus()
         self.trabajos = Trabajos(self.dir_datos / 'trabajos.json', _BusConSincronizacion(self.bus, self))
         self.trabajos.al_terminar(self.terminar_ejecucion)
+        from .origenes import Origenes
+        self.origenes = Origenes(self.dominio, self.registro, self.bus)
+        self.firma_codigo = firma_codigo(self.raiz)
         self._marcar_interrumpidas()
+        threading.Thread(target=self._refrescar_revisiones, daemon=True).start()
         self.api = Api(self)
         self.httpd = None
         self.puerto = None
@@ -109,7 +114,7 @@ class Servidor:
 
         for puerto in range(inicial, inicial + intentos):
             try:
-                self.httpd = ThreadingHTTPServer(('127.0.0.1', puerto), Handler)
+                self.httpd = _ServidorHttp(('127.0.0.1', puerto), Handler)
                 self.httpd.daemon_threads = True
                 self.puerto = puerto
                 return
@@ -153,6 +158,21 @@ class Servidor:
                     return
         threading.Thread(target=vigilar, daemon=True).start()
 
+    def reiniciar(self, demora=0.5):
+        """Arranca otra instancia con el mismo token y el mismo puerto (así la pantalla abierta sigue sin volver a
+        entrar) y se apaga. La nueva espera a que esta suelte el puerto."""
+        import subprocess
+        flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+        subprocess.Popen(comando_reinicio(self.dir_datos, self.token, self.puerto), cwd=str(self.raiz), creationflags=flags,
+                         close_fds=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.registro.info('Reinicio pedido desde la pantalla')
+        self.cerrando = True
+
+        def cerrar():
+            time.sleep(demora)
+            self.cerrar()  # suelta el puerto enseguida para que lo tome la instancia nueva
+        threading.Thread(target=cerrar, daemon=True).start()
+
     def apagar(self, demora=0.3):
         if self.cerrando:
             return
@@ -195,6 +215,12 @@ class Servidor:
             self.dominio.actualizar_estado(e['id'], nuevo)
             self.bus.emitir('ejecucion', self.dominio.obtener_ejecucion(e['id']))
 
+    def _refrescar_revisiones(self):
+        try:
+            self.dominio.refrescar_revisiones()
+        except Exception:
+            self.registro.error('Al recontar las revisiones:\n%s', traceback.format_exc())
+
     def terminar_ejecucion(self, trabajo):
         e = self.dominio.obtener_ejecucion(trabajo.get('ejecucionId'))
         if not e:
@@ -212,6 +238,10 @@ class Servidor:
                     self.dominio.guardar_triage(e['id'])
                 self.dominio.actualizar_estado(e['id'], 'ok', resumen=resumen, salidas=[{k: v for k, v in s.items() if k != 'tipos'} for s in salidas], error=None, traslado=traslado)
                 self.registro.info('Ejecución %s terminada; traslado %s', e['id'], traslado)
+                try:
+                    self.origenes.preparar(self.dominio.obtener_ejecucion(e['id']))
+                except Exception:
+                    self.registro.error('Al preparar el Excel de origen de %s:\n%s', e['id'], traceback.format_exc())
             except Exception:
                 self.registro.error('Al cerrar la ejecución %s:\n%s', e['id'], traceback.format_exc())
                 self.dominio.actualizar_estado(e['id'], 'error', error='El reporte terminó pero no se pudieron preparar los resultados; ver el registro.')
@@ -224,6 +254,8 @@ class Servidor:
     # ---------- atención de peticiones ----------
     def atender(self, h, metodo):
         self.ultima_peticion = time.time()
+        if self.cerrando:
+            h.close_connection = True  # al apagarse no se sostienen conexiones: la pantalla busca la instancia nueva
         ruta, query = ruta_y_query(h.path)
         host = host_de(h.headers, f'127.0.0.1:{self.puerto}')
         try:
@@ -328,7 +360,33 @@ class Servidor:
     def estado(self):
         return {'version': VERSION, 'puerto': self.puerto, 'datos': str(self.dir_datos), 'python': sys.version.split()[0],
                 'reportes': [catalogo.descripcion_publica(c, self.raiz, self.probar_venv) for c in catalogo.REPORTES],
-                'trabajosActivos': len(self.trabajos.activos())}
+                'trabajosActivos': len(self.trabajos.activos()), 'origenes': self.origenes.en_curso(), 'instancia': self.instancia,
+                # El código de la herramienta cambió en disco después de abrirla (se actualizó): hay que reiniciarla.
+                'reiniciar': firma_codigo(self.raiz) != self.firma_codigo}
+
+
+class _ServidorHttp(ThreadingHTTPServer):
+    # En Windows, SO_REUSEADDR deja que otro proceso abra el mismo puerto mientras éste lo usa: el puerto es exclusivo.
+    allow_reuse_address = sys.platform != 'win32'
+    daemon_threads = True
+
+
+def comando_reinicio(dir_datos, token, puerto):
+    """Comando de la instancia que reemplaza a esta al reiniciar (mismo intérprete, datos, token y puerto)."""
+    return [sys.executable, '-m', 'app.arranque', '--sin-navegador', '--datos', str(dir_datos), '--puerto', str(puerto), '--reinicio', token]
+
+
+def firma_codigo(raiz):
+    """Huella del código de la herramienta (nombre, tamaño y fecha de cada .py de app/)."""
+    import hashlib
+    h = hashlib.sha1()
+    for p in sorted(Path(raiz, 'app').rglob('*.py')):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        h.update(f'{p.relative_to(raiz).as_posix()}|{st.st_size}|{st.st_mtime_ns}\n'.encode('utf-8'))
+    return h.hexdigest()
 
 
 def _nombre_cabecera(nombre):

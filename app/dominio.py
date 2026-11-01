@@ -15,7 +15,11 @@ from .tablas import Tablas
 ESTADOS_EJECUCION = ('borrador', 'listo', 'corriendo', 'esperando', 'ok', 'error', 'cancelado')
 _RE_PERIODO = re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
 _RE_FECHA = re.compile(r'^\d{4}-\d{2}-\d{2}$')
-CONFIGURACION_DEFAULT = {'tema': 'claro', 'limiteMB': 200, 'reportes': {}, 'bienvenida': False, 'version': 1}
+CONFIGURACION_DEFAULT = {'tema': 'claro', 'limiteMB': 200, 'reportes': {}, 'vistas': {}, 'bienvenida': False, 'version': 1}
+# Versión de la regla con que se cuentan las filas pendientes de una ejecución. Si cambia la regla (por ejemplo,
+# las filas que coinciden dejan de contar), las ejecuciones guardadas con otra versión se recuentan al arrancar.
+REVISION_V = 2
+_RE_CODIGO = re.compile(r'^[a-z0-9_]{1,60}$')
 
 
 def _iso(t):
@@ -142,6 +146,8 @@ class Dominio:
             return
         p = Path(ruta)
         p.unlink(missing_ok=True)
+        for copia in p.parent.glob('filas-*.sqlite*'):  # copias de consulta del Excel de origen
+            copia.unlink(missing_ok=True)
         try:
             p.parent.rmdir()
         except OSError:
@@ -366,20 +372,46 @@ class Dominio:
             return dict(max(previas, key=lambda x: x['version'])) if previas else None
 
     # ---------- revisión ----------
-    def tablas(self, ejecucion_id):
-        return Tablas(self.rutas(ejecucion_id)['sqlite'], ahora=self.ahora)
-
-    def tablas_informativas(self, ejecucion_id):
-        """Tablas de la ejecución que son sólo informativas (no suman a la revisión), según la definición del reporte."""
+    def _salidas_de(self, ejecucion_id, anteriores=False):
+        """Definición de las salidas del reporte de la ejecución ({tabla: salida}). Con `anteriores`, también las tablas
+        que dejaban versiones anteriores del reporte (`salidas_anteriores`), marcadas con 'anterior'."""
         e = self.obtener_ejecucion(ejecucion_id)
         if not e:
-            return set()
+            return {}
         from . import catalogo
         try:
             d = catalogo.obtener(e['reporte'])
         except KeyError:
-            return set()
-        return {s['tabla'] for s in d['salidas'] if s.get('revisable') is False}
+            return {}
+        salidas = {s['tabla']: s for s in d['salidas']}
+        if anteriores:
+            for s in d.get('salidas_anteriores', []):
+                salidas.setdefault(s['tabla'], {**s, 'anterior': True})
+        return salidas
+
+    def _hermanas(self, ejecucion_id):
+        """{tabla: [las otras tablas del mismo libro]}: una fila puede pasar de solapa entre versiones o entre meses
+        (Mes en curso → Histórico), o su tabla puede haber cambiado de nombre; su marca se busca también ahí."""
+        salidas = self._salidas_de(ejecucion_id, anteriores=True)
+        return {t: [o for o, so in salidas.items() if o != t and so.get('archivo') and so.get('archivo') == s.get('archivo') and not so.get('anterior')]
+                for t, s in salidas.items()}
+
+    def tablas(self, ejecucion_id):
+        reglas = {k: s['revisar'] for k, s in self._salidas_de(ejecucion_id).items() if s.get('revisar')}
+        return Tablas(self.rutas(ejecucion_id)['sqlite'], ahora=self.ahora, reglas=reglas)
+
+    def tablas_informativas(self, ejecucion_id):
+        """Tablas de la ejecución que son sólo informativas (no suman a la revisión), según la definición del reporte."""
+        return {k for k, s in self._salidas_de(ejecucion_id).items() if s.get('revisable') is False}
+
+    def refrescar_revisiones(self):
+        """Recuenta las pendientes de las ejecuciones guardadas con una regla de revisión anterior."""
+        with self._lock:
+            viejas = [e['id'] for e in self._ejecuciones.entradas if e['estado'] == 'ok' and e.get('revisionV') != REVISION_V]
+        for ejecucion_id in viejas:
+            if self.tablas(ejecucion_id).existe():
+                self.guardar_triage(ejecucion_id)
+        return len(viejas)
 
     def guardar_triage(self, ejecucion_id):
         t = self.tablas(ejecucion_id)
@@ -390,6 +422,7 @@ class Dominio:
             e = self._buscar_ejecucion(ejecucion_id)
             if e:
                 e['revision'] = resumen
+                e['revisionV'] = REVISION_V
                 self._ejecuciones.guardar()
         return resumen
 
@@ -401,7 +434,7 @@ class Dominio:
         if not anterior:
             return {'aplicadas': 0, 'sin_destino': 0, 'desde': None}
         triage = leer_json(self.rutas(anterior['id'])['triage'], {}) or {}
-        r = self.tablas(ejecucion_id).aplicar_triage(triage, origen='version')
+        r = self.tablas(ejecucion_id).aplicar_triage(triage, origen='version', hermanas=self._hermanas(ejecucion_id))
         r['desde'] = anterior['version']
         self.guardar_triage(ejecucion_id)
         with self._lock:
@@ -429,7 +462,7 @@ class Dominio:
             finales = [x for x in candidatas if x.get('final')]
             origen = (finales or sorted(candidatas, key=lambda x: x['version']))[-1]
         triage = leer_json(self.rutas(origen['id'])['triage'], {}) or {}
-        r = self.tablas(ejecucion_id).aplicar_triage(triage, origen='cierre', solo_estados=('omitida',))
+        r = self.tablas(ejecucion_id).aplicar_triage(triage, origen='cierre', solo_estados=('omitida',), hermanas=self._hermanas(ejecucion_id))
         r['desde'] = previo['periodo']
         self.guardar_triage(ejecucion_id)
         return r
@@ -457,6 +490,22 @@ class Dominio:
                         pass
                 elif k == 'bienvenida':
                     conf['bienvenida'] = bool(v)
+                elif k == 'vistas' and isinstance(v, dict):
+                    vistas = conf.setdefault('vistas', {})
+                    for codigo, por_tabla in v.items():
+                        if not _RE_CODIGO.match(str(codigo)) or not isinstance(por_tabla, dict):
+                            continue
+                        actual = vistas.setdefault(codigo, {})
+                        for tabla, vista in por_tabla.items():
+                            if not _RE_CODIGO.match(str(tabla)):
+                                continue
+                            if vista is None:
+                                actual.pop(tabla, None)
+                            elif isinstance(vista, dict):
+                                lista = lambda x: [str(c)[:200] for c in (x if isinstance(x, list) else []) if isinstance(c, str)][:400]
+                                actual[tabla] = {'orden': lista(vista.get('orden')), 'ocultas': lista(vista.get('ocultas'))}
+                        if not actual:
+                            vistas.pop(codigo, None)
                 elif k == 'reportes' and isinstance(v, dict):
                     conf.setdefault('reportes', {})
                     for codigo, datos in v.items():
