@@ -4,7 +4,8 @@
 
 Si ya hay una instancia viva (datos/.servidor.json responde), sólo abre el navegador en ella.
 Con --reinicio TOKEN (lo usa "Reiniciar la herramienta"): espera a que la instancia anterior se apague y arranca con
-ese token y en ese puerto, para que la pantalla abierta siga funcionando."""
+ese token y en ese puerto, para que la pantalla abierta siga funcionando.
+Abierta así (no desde las pruebas), asegura el acceso directo "Reportes de cierre" (app/acceso_directo.py)."""
 import argparse
 import json
 import os
@@ -57,7 +58,7 @@ def abrir_navegador(url):
         pass
 
 
-def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3 * 3600):
+def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3 * 3600, acceso=None):
     p = argparse.ArgumentParser(description='Reportes de cierre')
     p.add_argument('--sin-navegador', action='store_true')
     p.add_argument('--puerto', type=int, default=PUERTO_INICIAL)
@@ -99,6 +100,8 @@ def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3
     if servidor is None:
         servidor = crear_servidor(carpeta, puerto_inicial=args.puerto, intentos=INTENTOS_PUERTO, token=args.reinicio, inactividad_segundos=inactividad_segundos, al_cerrar=al_cerrar)
     escribir_json_atomico(archivo, {'pid': os.getpid(), 'puerto': servidor.puerto, 'token': servidor.token, 'inicio': time.strftime('%Y-%m-%dT%H:%M:%S')})
+    if acceso:
+        acceso(RAIZ, carpeta, servidor.registro)
     if args.consola:
         print(f'Reportes de cierre en {servidor.url_con_token}')
         print(f'Datos en {carpeta}')
@@ -112,4 +115,5 @@ def main(argv=None, abrir=abrir_navegador, bloquear=True, inactividad_segundos=3
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    from app.acceso_directo import asegurar_en_hilo
+    sys.exit(main(acceso=asegurar_en_hilo))

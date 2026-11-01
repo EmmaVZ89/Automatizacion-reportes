@@ -46,6 +46,15 @@ CLAVES = {
     'abiertos': ['FondoDeRiesgo', 'CodigoEmpresa', 'Comprobante'],
     'saldo': ['FondoDeRiesgo'],
 }
+
+
+def titulo_libro(libro):
+    """Control_Netos_Impuestos -> 'Control netos impuestos': mayúscula sólo en la primera palabra (las siglas, como
+    MORA, quedan)."""
+    primera, *resto = libro.split('_')
+    return ' '.join([primera] + [p if len(p) > 1 and p.isupper() else p.lower() for p in resto])
+
+
 LIBROS = ['Control_Netos_Impuestos', 'Control_Datos_Obligatorios', 'Control_Servicios_Administrativos', 'Saldo_MORA', 'Comprobantes_Abiertos', 'Control_Concepto_Agrupador']
 
 for s in SALIDAS + SALIDAS_ANTERIORES:
@@ -76,7 +85,7 @@ REPORTE = {
         {'clave': 'corte', 'titulo': 'Fecha de corte', 'tipo': 'fecha', 'obligatorio': True, 'default_cierre': 'corte', 'no_persistir': True,
          'ayuda': 'Define el año y mes en curso, la exigibilidad del segundo servicio y las anulaciones.'},
         {'clave': 'salidas_a_generar', 'titulo': 'Controles a generar', 'tipo': 'lista', 'default': list(LIBROS),
-         'opciones': [{'valor': l, 'titulo': l.replace('_', ' ')} for l in LIBROS], 'ayuda': 'Desmarcá los que no necesites este mes.'},
+         'opciones': [{'valor': l, 'titulo': SECCIONES.get(l, titulo_libro(l))} for l in LIBROS], 'ayuda': 'Desmarcá los que no necesites este mes.'},
         {'clave': 'inicio_regla_mensual', 'titulo': 'Desde cuándo el segundo servicio debe ir en el mes exacto', 'tipo': 'fecha', 'default': '2026-10-01',
          'ayuda': 'Antes de esta fecha, un segundo servicio desfasado se acepta como histórico.'},
         {'clave': 'documentos_excluidos', 'titulo': 'Comprobantes excluidos de todos los controles', 'tipo': 'lista', 'default': ['CH-20190722105522839'],

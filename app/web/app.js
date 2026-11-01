@@ -535,7 +535,8 @@
         ['¿Dónde veo lo que está tardando?', 'En el botón de Tareas, arriba a la derecha, al lado de Ayuda. Muestra los reportes que corren, los Excel que se arman y los archivos que se suben, con su avance y su resultado. Si pedís de nuevo algo que ya está en curso, la herramienta te avisa en lugar de repetirlo.'],
         ['Apareció una franja que dice que la herramienta se actualizó', 'Se instaló una versión nueva con la herramienta abierta. Tocá "Reiniciar la herramienta" en la franja: se cierra y se vuelve a abrir sola en unos segundos.'],
         ['¿Cómo reinicio la herramienta?', 'Desde el menú de los tres puntos, "Reiniciar la herramienta". Sirve si algo quedó trabado o después de instalar una versión nueva. Lo que tenés guardado no se pierde; si hay un reporte corriendo, te pide que esperes o lo canceles.'],
-        ['¿Cómo cierro la herramienta?', 'Desde el menú de los tres puntos, "Cerrar la herramienta". Igual se apaga sola después de tres horas sin uso.']]],
+        ['¿Cómo cierro la herramienta?', 'Desde el menú de los tres puntos, "Cerrar la herramienta". Igual se apaga sola después de tres horas sin uso.'],
+        ['¿Dónde está el acceso directo?', 'La herramienta lo crea sola la primera vez que se abre, en el Escritorio, con el nombre "Reportes de cierre". Si lo borraste, en Configuración está "Crear el acceso directo en el Escritorio".']]],
     ] },
     { clave: 'problemas', titulo: 'Si algo sale mal', icono: 'i-alerta', partes: [
       ['qa', [['Un archivo dice "No reconocí qué reporte es"', 'Revisá que sea el Excel original descargado del sistema, sin modificar ni guardar con otro formato.'],
@@ -713,16 +714,18 @@
   function enrutar() {
     const partes = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
     const vista = partes[0] || 'inicio';
-    const nav = { inicio: 'inicio', cierre: 'inicio', ejecucion: 'inicio', facturas: 'facturas', historial: 'historial', configuracion: 'configuracion' }[vista];
-    for (const a of document.querySelectorAll('[data-nav]')) a.classList.toggle('activa', a.dataset.nav === nav);
+    marcarNav({ inicio: 'inicio', cierres: 'cierres', cierre: 'cierres', ejecucion: 'cierres', facturas: 'facturas', historial: 'historial', configuracion: 'inicio' }[vista]);
     $('#vista').classList.toggle('ancha', vista === 'ejecucion');
     estado.vista = { nombre: vista, partes };
     detenerSondeo();
     soltarCabecera();
     cerrarPopoverFiltro();
     cerrarMenu();
-    const r = { inicio: vistaInicio, cierre: () => vistaCierre(partes[1]), ejecucion: () => vistaEjecucion(partes[1], partes[2]), facturas: vistaFacturas, historial: vistaHistorial, configuracion: vistaConfiguracion }[vista];
+    const r = { inicio: () => vistaInicio(), cierres: () => vistaInicio(true), cierre: () => vistaCierre(partes[1]), ejecucion: () => vistaEjecucion(partes[1], partes[2]), facturas: vistaFacturas, historial: vistaHistorial, configuracion: async () => { history.replaceState(null, '', '#/inicio'); await vistaInicio(); await abrirConfiguracion(); } }[vista];
     return (r || vistaInicio)().catch(avisarError);
+  }
+  function marcarNav(nav) {
+    for (const a of document.querySelectorAll('[data-nav]')) a.classList.toggle('activa', a.dataset.nav === nav);
   }
   function detenerSondeo() { if (estado.sondeo) { clearInterval(estado.sondeo); estado.sondeo = null; } }
   function conectarEventos() {
@@ -745,9 +748,9 @@
           if (e.estado === 'ok' && (antes === 'corriendo' || antes === 'esperando')) aviso(`${estado.w.reporte.nombre}: terminó bien. Ya podés revisar los resultados.`, 'ok');
           enSilencio(() => vistaEjecucion(e.id, e.estado === 'ok' ? '4' : undefined, true));
         }
-      } else if (estado.vista && ['inicio', 'cierre', 'historial', 'facturas'].includes(estado.vista.nombre)) enSilencio(enrutar);
+      } else if (estado.vista && ['inicio', 'cierres', 'cierre', 'historial', 'facturas'].includes(estado.vista.nombre)) enSilencio(enrutar);
     });
-    f.addEventListener('cierre', () => { if (estado.vista && estado.vista.nombre === 'inicio') enSilencio(enrutar); });
+    f.addEventListener('cierre', () => { if (estado.vista && ['inicio', 'cierres'].includes(estado.vista.nombre)) enSilencio(enrutar); });
     f.onerror = () => { setTimeout(() => { if (estado.fuente === f) conectarEventos(); }, 5000); };
   }
   // Redibujo que no pidió el usuario (llegó un evento): sin las animaciones de entrada, para que no parpadee.
@@ -811,7 +814,7 @@
   }
 
   // ---------------------------------------------------------------- vista: inicio (cierres)
-  async function vistaInicio() {
+  async function vistaInicio(soloCierres = false) {
     const sello = nuevoSello();
     estado.w = null;
     const [cierres, app] = await Promise.all([api('GET', '/api/cierres'), api('GET', '/api/estado')]);
@@ -829,7 +832,10 @@
       try { const c = await tareas.correr({ clave: 'importar:' + f.name, titulo: `Importando ${f.name}` }, async () => api('POST', '/api/cierres/importar', f, { crudo: true, cabeceras: { 'Content-Type': 'application/zip' } })); if (!c) return; aviso(`Se importó el cierre de ${periodoLargo(c.periodo)} (sólo para ver).`, 'ok'); enrutar(); } catch (e) { avisarError(e); }
       importar.value = '';
     });
-    if (!enCurso) {
+    if (soloCierres) {
+      contenedor.appendChild(el('div', { class: 'encabezado entrar' }, el('div', null, el('h1', null, 'Cierres'),
+        el('div', { class: 'sub' }, 'Cada cierre agrupa los reportes de un mes. Entrá a uno para correr sus reportes o ver sus resultados.'))));
+    } else if (!enCurso) {
       contenedor.appendChild(el('section', { class: 'hero' }, el('div', { class: 'hero-cuadricula' }), el('div', { class: 'hero-brillo' }),
         el('div', { class: 'hero-texto' },
           el('span', { class: 'hero-etiqueta' }, icono('i-chispa'), cierres.length ? 'Todo al día' : 'Para empezar'),
@@ -879,7 +885,7 @@
         el('span', { class: 'chip ' + (res.finales === res.total ? 'ok' : 'borde') }, `${res.finales + res.terminados}/${res.total}`)));
     }
     contenedor.appendChild(lista);
-    if (estado.conf && !estado.conf.bienvenida) bienvenida(empezar => { if (empezar && !cierres.length) nuevoCierre(actual).catch(avisarError); });
+    if (!soloCierres && estado.conf && !estado.conf.bienvenida) bienvenida(empezar => { if (empezar && !cierres.length) nuevoCierre(actual).catch(avisarError); });
   }
   function textoEstadoReporte(info, r) {
     if (!info || !info.ultima) return `${r.nombre}: sin correr`;
@@ -914,11 +920,11 @@
       { icono: 'i-basura', texto: 'Borrar el cierre', peligro: true, onclick: async () => {
         const tieneFinal = Object.values(c.reportes).some(r => r.final);
         if (!await confirmar('¿Borrar este cierre?', (tieneFinal ? 'Tiene resultados finales. ' : '') + 'Se pierden todas sus corridas, archivos y revisiones. No se puede deshacer.', 'Borrar el cierre', 'peligro')) return;
-        try { await api('DELETE', `/api/cierres/${encodeURIComponent(c.id)}?forzar=1`); aviso('Cierre borrado.', 'ok'); location.hash = '#/inicio'; } catch (e) { avisarError(e); }
+        try { await api('DELETE', `/api/cierres/${encodeURIComponent(c.id)}?forzar=1`); aviso('Cierre borrado.', 'ok'); location.hash = '#/cierres'; } catch (e) { avisarError(e); }
       } },
     ];
     const listos = res.finales + res.terminados;
-    main.appendChild(el('div', { class: 'migas' }, el('a', { href: '#/inicio' }, 'Cierres'), icono('i-der'), el('span', null, periodoLargo(c.periodo))));
+    main.appendChild(el('div', { class: 'migas' }, el('a', { href: '#/cierres' }, 'Cierres'), icono('i-der'), el('span', null, periodoLargo(c.periodo))));
     main.appendChild(el('section', { class: 'hero entrar' }, el('div', { class: 'hero-cuadricula' }), el('div', { class: 'hero-brillo' }),
       el('div', { class: 'hero-texto' },
         el('span', { class: 'hero-etiqueta' }, icono(c.cerrado ? 'i-check-circulo' : 'i-calendario'), c.importado ? 'Cierre importado (sólo para ver)' : c.cerrado ? 'Cierre completo' : 'Cierre en curso'),
@@ -1012,16 +1018,27 @@
     document.documentElement.style.removeProperty('--alto-cabecera');
   }
   // El encabezado del reporte (migas, título y pasos) queda fijo arriba; al bajar se achica para dejar lugar a la tabla.
+  // Achicado conserva el alto que ocupaba (margen inferior): si la página se acortara, el navegador corregiría el scroll,
+  // el encabezado volvería a agrandarse y la pantalla temblaría entre las dos versiones.
   function fijarCabecera(cabecera) {
     soltarCabecera();
     let compacta = false;
+    let altoCompleto = 0;
+    const conservarAlto = () => { cabecera.style.marginBottom = compacta ? Math.max(16, altoCompleto - cabecera.offsetHeight) + 'px' : ''; };
     estado.alScroll = () => {
       const y = window.scrollY;
       const nueva = compacta ? y > 8 : (y > 60 && document.documentElement.scrollHeight - window.innerHeight > 220);
-      if (nueva !== compacta) { compacta = nueva; cabecera.classList.toggle('compacta', compacta); }
+      if (nueva === compacta) return;
+      if (nueva) altoCompleto = cabecera.offsetHeight;
+      compacta = nueva;
+      cabecera.classList.toggle('compacta', compacta);
+      conservarAlto();
     };
     window.addEventListener('scroll', estado.alScroll, { passive: true });
-    estado.observaCabecera = new ResizeObserver(() => document.documentElement.style.setProperty('--alto-cabecera', cabecera.offsetHeight + 'px'));
+    estado.observaCabecera = new ResizeObserver(() => {
+      conservarAlto();  // sigue la transición del achique
+      document.documentElement.style.setProperty('--alto-cabecera', cabecera.offsetHeight + 'px');
+    });
     estado.observaCabecera.observe(cabecera);
     estado.alScroll();
   }
@@ -1047,10 +1064,11 @@
     w.paso = paso;
     const main = limpiar($('#vista'));
     const esHerramienta = !!cierre.herramienta;
+    marcarNav(esHerramienta ? 'facturas' : 'cierres');
     const volver = esHerramienta ? '#/facturas' : '#/cierre/' + encodeURIComponent(cierre.id);
     const cabecera = el('div', { class: 'cabecera-fija' });
     main.appendChild(cabecera);
-    cabecera.appendChild(el('div', { class: 'migas' }, esHerramienta ? el('a', { href: '#/facturas' }, 'Facturas') : [el('a', { href: '#/inicio' }, 'Cierres'), icono('i-der'), el('a', { href: volver }, periodoLargo(cierre.periodo))],
+    cabecera.appendChild(el('div', { class: 'migas' }, esHerramienta ? el('a', { href: '#/facturas' }, 'Facturas') : [el('a', { href: '#/cierres' }, 'Cierres'), icono('i-der'), el('a', { href: volver }, periodoLargo(cierre.periodo))],
       icono('i-der'), el('span', null, `${reporte.nombre}, versión ${e.version}`)));
     cabecera.appendChild(el('div', { class: 'cabecera-reporte' }, tileReporte(reporte, 'grande'),
       el('div', { class: 'titulos' }, el('h1', null, reporte.nombre),
@@ -1072,6 +1090,25 @@
     await ({ 1: pasoArchivos, 2: pasoOpciones, 3: pasoEjecucion, 4: pasoResultados, 5: pasoExportar }[paso])(contenido, w);
   }
   function intro(iconoNombre, texto) { return el('div', { class: 'intro' }, icono(iconoNombre), el('p', null, texto)); }
+  // Crea y corre ya una versión nueva con los mismos archivos y opciones (para una versión de antes de un cambio del
+  // reporte). Si no se puede correr (por ejemplo, la limpieza borró un archivo), queda en Opciones para corregirlo.
+  function correrNuevaVersion(w) {
+    return async () => {
+      let nueva = null;
+      const datos = { entradas: w.e.entradas || {}, parametros: w.e.parametros || {} };
+      try {
+        nueva = await api('POST', '/api/ejecuciones', { cierre: w.cierre.id, reporte: w.reporte.codigo });
+        await api('PATCH', '/api/ejecuciones/' + encodeURIComponent(nueva.id), datos);
+        await api('POST', `/api/ejecuciones/${encodeURIComponent(nueva.id)}/ejecutar`, datos);
+        estado.w = null;
+        aviso(`Corriendo la versión ${nueva.version}. Cuando termine, lo que revisaste pasa solo.`, 'info');
+        location.hash = '#/ejecucion/' + encodeURIComponent(nueva.id) + '/3';
+      } catch (err) {
+        avisarError(err);
+        if (nueva) { estado.w = null; location.hash = '#/ejecucion/' + encodeURIComponent(nueva.id) + '/2'; }
+      }
+    };
+  }
   function nuevaVersion(w) {
     return async () => {
       try {
@@ -1745,9 +1782,9 @@
       try { const r = await api('POST', `/api/ejecuciones/${encodeURIComponent(e.id)}/traer-revision-anterior`, {}); aviso(r.desde ? `Del cierre de ${periodoLargo(r.desde)}: ${n(r.aplicadas)} filas marcadas${r.sin_destino ? `, ${n(r.sin_destino)} sin fila en este mes` : ''}.` : 'No hay un cierre anterior con este reporte.', r.desde ? 'ok' : 'atencion'); await pasoResultados(limpiar(cont), w); } catch (err) { avisarError(err); }
     };
     cont.appendChild(intro('i-tabla', 'Marcá cada fila como revisada u omitida y anotá observaciones. Lo que marques se guarda solo y pasa a la próxima versión de este mes.'));
-    if (datos.tablas.some(t => t.anterior)) cont.appendChild(el('div', { class: 'caja-info', style: 'margin:0 0 14px;align-items:center' }, icono('i-info'),
-      el('p', { style: 'flex:1' }, 'Esta versión se corrió antes de un cambio del reporte y algunas tablas se ven como eran entonces. Corré una versión nueva para verlas como ahora: lo que ya revisaste pasa solo.'),
-      btn('Nueva versión con estos datos', nuevaVersion(w), 'chico', { icono: 'i-refrescar' })));
+    if (datos.tablas.some(t => t.anterior)) cont.appendChild(el('div', { class: 'caja-espera version-anterior', style: 'margin:0 0 16px' }, icono('i-alerta', 'g'),
+      el('p', null, el('b', null, 'Esta versión es de antes de un cambio del reporte.'), ` Algunas tablas se ven como eran entonces (${datos.tablas.filter(t => t.anterior).map(t => t.hoja || t.titulo).join(', ')}). Corré una versión nueva con los mismos archivos y opciones para verlas como ahora: lo que ya revisaste pasa solo.`),
+      btn('Correr una versión nueva', correrNuevaVersion(w), 'primario', { icono: 'i-play' })));
     if (datos.traslado && datos.traslado.desde) cont.appendChild(el('div', { class: 'caja-info', style: 'margin:0 0 14px' }, icono('i-deshacer'), el('p', null, `De la versión ${datos.traslado.desde} se trasladaron ${n(datos.traslado.aplicadas)} marcas` + (datos.traslado.sin_destino ? `; ${n(datos.traslado.sin_destino)} no encontraron su fila en esta versión.` : '.'))));
     cont.appendChild(medidor);
     pintarMedidor();
@@ -1767,7 +1804,8 @@
     cont.appendChild(cuerpo);
     // Secciones abiertas o cerradas por el usuario (mientras dure la pantalla); sin elección, se abre la de la tabla activa.
     if (!w.secciones) w.secciones = new Map();
-    const nombreLibro = archivo => String(archivo).replace(/\.(xlsx|csv|txt)$/i, '').replace(/_/g, ' ');
+    const nombreLibro = archivo => String(archivo).replace(/\.(xlsx|csv|txt)$/i, '').split('_').filter(Boolean)
+      .map((p, i) => i === 0 ? p.charAt(0).toUpperCase() + p.slice(1) : (p.length > 1 && p === p.toUpperCase() ? p : p.toLowerCase())).join(' ');
     const pintarLista = () => {
       limpiar(lista);
       const boton = (t, hija) => el('button', { type: 'button', class: (t.tabla === w.tabla ? 'activa' : '') + (hija ? ' hija' : ''), 'aria-current': t.tabla === w.tabla ? 'true' : null, title: t.titulo,
@@ -2349,15 +2387,12 @@
   }
 
   // ---------------------------------------------------------------- vista: configuración
-  async function vistaConfiguracion() {
-    const sello = nuevoSello();
-    estado.w = null;
+  // Configuración en una ventana, como la de PedidosIA: el índice de secciones a la izquierda y una sección a la vista.
+  // Cada sección guarda como siempre (el tema al elegirlo, el resto con su botón): cerrar no pierde nada.
+  async function abrirConfiguracion(inicial = 'apariencia') {
     const [conf, app] = await Promise.all([api('GET', '/api/configuracion'), api('GET', '/api/estado')]);
-    if (!vigente(sello)) return;
     estado.app = app;
     estado.conf = conf;
-    const main = limpiar($('#vista'));
-    const seccion = (iconoNombre, titulo, texto, ...contenido) => el('section', { class: 'tarjeta seccion-config' }, el('div', { class: 'cabeza' }, el('span', { class: 'tile' }, icono(iconoNombre)), el('div', null, el('h2', null, titulo), texto ? el('div', { class: 'muted' }, texto) : null)), contenido);
     const temaSeg = el('div', { class: 'segmentado', role: 'group', 'aria-label': 'Tema' });
     for (const [v, t, ic] of [['claro', 'Claro', 'i-sol'], ['oscuro', 'Oscuro', 'i-luna']]) {
       temaSeg.appendChild(el('button', { type: 'button', 'data-valor': v, class: document.documentElement.dataset.tema === v ? 'activa' : '', onclick: async () => {
@@ -2381,19 +2416,40 @@
       }, 'primario', { icono: 'i-check' }));
     };
     selReporte.addEventListener('change', () => pintarDefaults().catch(avisarError));
-    main.append(el('div', { class: 'encabezado entrar' }, el('div', null, el('h1', null, 'Configuración'), el('div', { class: 'sub' }, 'Apariencia, valores por defecto de cada reporte y datos de la herramienta.'))),
-      el('div', { class: 'escalonado' },
-        seccion('i-sol', 'Apariencia', 'El tema claro es el predeterminado.', el('div', { class: 'campo' }, el('div', { class: 'rotulo' }, 'Tema'), temaSeg)),
-        seccion('i-archivo', 'Archivos', 'Los reportes históricos suelen pesar entre 50 y 100 MB.', el('div', { class: 'campo' }, el('label', { for: 'limite' }, 'Tamaño máximo de cada archivo (MB)'), limite),
-          btn('Guardar', async () => { try { await api('PATCH', '/api/configuracion', { limiteMB: parseInt(limite.value, 10) }); aviso('Guardado.', 'ok'); } catch (err) { avisarError(err); } }, 'chico', { icono: 'i-check' })),
-        seccion('i-ajustes', 'Valores por defecto de cada reporte', 'Lo que guardes acá aparece ya cargado en el paso Opciones. En cada corrida se puede cambiar igual.', el('div', { class: 'campo', style: 'max-width:340px' }, el('div', { class: 'rotulo' }, 'Reporte'), selReporte), formDefaults),
-        seccion('i-carpeta', 'Dónde están los datos', 'Los cierres, los archivos agregados, los resultados y las revisiones se guardan en esta carpeta de tu PC. No la compartas ni la pongas en OneDrive: para mandar un cierre usá "Exportar el cierre".',
-          el('p', null, el('code', null, conf.carpetaDatos)),
-          btn('Liberar espacio', async () => {
-            if (!await confirmar('¿Liberar espacio?', 'Se borran los Excel agregados que ninguna versión final usa. Los resultados y las revisiones se conservan.', 'Liberar espacio')) return;
-            try { await tareas.correr({ clave: 'limpieza', titulo: 'Limpiando archivos sin usar' }, async () => { const r = await api('POST', '/api/limpieza', {}); return `Se liberaron ${r.liberadosMB} MB.`; }); } catch (err) { avisarError(err); }
-          }, '', { icono: 'i-basura' })),
-        seccion('i-info', 'La herramienta', `Versión ${app.version}.`, el('div', { class: 'acciones-fila' }, btn('Ver la guía de inicio', () => bienvenida(), '', { icono: 'i-chispa' }), btn('Cerrar la herramienta', cerrarHerramienta, 'peligro', { icono: 'i-apagar' })))));
+    const cerrarVentana = () => { const d = $('#modal'); if (d.open) d.close(); };
+    const secciones = [
+      ['apariencia', 'i-sol', 'Apariencia', 'El tema claro es el predeterminado.', el('div', { class: 'campo' }, el('div', { class: 'rotulo' }, 'Tema'), temaSeg)],
+      ['archivos', 'i-archivo', 'Archivos', 'Los reportes históricos suelen pesar entre 50 y 100 MB.', el('div', { class: 'campo' }, el('label', { for: 'limite' }, 'Tamaño máximo de cada archivo (MB)'), limite),
+        btn('Guardar', async () => { try { await api('PATCH', '/api/configuracion', { limiteMB: parseInt(limite.value, 10) }); aviso('Guardado.', 'ok'); } catch (err) { avisarError(err); } }, 'chico', { icono: 'i-check' })],
+      ['valores', 'i-ajustes', 'Valores por defecto', 'Lo que guardes acá aparece ya cargado en el paso Opciones de cada reporte. En cada corrida se puede cambiar igual.',
+        el('div', { class: 'campo', style: 'max-width:340px' }, el('div', { class: 'rotulo' }, 'Reporte'), selReporte), formDefaults],
+      ['datos', 'i-carpeta', 'Dónde están los datos', 'Los cierres, los archivos agregados, los resultados y las revisiones se guardan en esta carpeta de tu PC. No la compartas ni la pongas en OneDrive: para mandar un cierre usá "Exportar el cierre".',
+        el('p', null, el('code', null, conf.carpetaDatos)),
+        btn('Liberar espacio', async () => {
+          if (!await confirmar('¿Liberar espacio?', 'Se borran los Excel agregados que ninguna versión final usa. Los resultados y las revisiones se conservan.', 'Liberar espacio')) return;
+          try { await tareas.correr({ clave: 'limpieza', titulo: 'Limpiando archivos sin usar' }, async () => { const r = await api('POST', '/api/limpieza', {}); return `Se liberaron ${r.liberadosMB} MB.`; }); } catch (err) { avisarError(err); }
+        }, '', { icono: 'i-basura' })],
+      ['acceso', 'i-pc', 'Acceso directo', 'La herramienta crea sola el acceso directo "Reportes de cierre" la primera vez que se abre. Si lo borraste, volvé a crearlo acá.',
+        btn('Crear el acceso directo en el Escritorio', async () => { try { await api('POST', '/api/acceso-directo', {}); aviso('Listo: en el Escritorio está el acceso directo "Reportes de cierre".', 'ok'); } catch (err) { avisarError(err); } }, '', { icono: 'i-pc' })],
+      ['herramienta', 'i-info', 'La herramienta', `Versión ${app.version}.`, el('div', { class: 'acciones-fila' },
+        btn('Ver la guía de inicio', () => { cerrarVentana(); bienvenida(); }, '', { icono: 'i-chispa' }),
+        btn('Reiniciar la herramienta', () => { cerrarVentana(); reiniciarHerramienta(); }, '', { icono: 'i-refrescar' }),
+        btn('Cerrar la herramienta', () => { cerrarVentana(); cerrarHerramienta(); }, 'peligro', { icono: 'i-apagar' }))],
+    ];
+    const indice = el('nav', { class: 'config-indice', 'aria-label': 'Secciones de la configuración' });
+    const texto = el('div', { class: 'config-texto' });
+    const mostrar = id => {
+      for (const b of indice.children) { const si = b.dataset.seccion === id; b.classList.toggle('activa', si); b.setAttribute('aria-current', si ? 'true' : 'false'); }
+      for (const s of texto.children) s.classList.toggle('activa', s.dataset.seccion === id);
+      texto.scrollTop = 0;
+    };
+    for (const [id, ic, titulo, bajada, ...contenido] of secciones) {
+      indice.appendChild(el('button', { type: 'button', 'data-seccion': id, onclick: () => mostrar(id) }, icono(ic), el('span', null, titulo)));
+      texto.appendChild(el('section', { 'data-seccion': id }, el('h3', null, icono(ic), titulo), el('p', { class: 'muted bajada' }, bajada), contenido));
+    }
+    abrirModal({ titulo: 'Configuración', iconoNombre: 'i-ajustes', ancho: true, cuerpo: el('div', { class: 'config-cuerpo' }, indice, texto),
+      pie: [btn('Listo', cerrarVentana, 'primario', { icono: 'i-check' })] });
+    mostrar(secciones.some(s => s[0] === inicial) ? inicial : 'apariencia');
     await pintarDefaults();
   }
   // Reinicia la herramienta: vuelve sola con el mismo acceso y la pantalla se recarga cuando la nueva responde.
@@ -2451,7 +2507,7 @@
   $('#btn-menu').addEventListener('click', ev => {
     ev.stopPropagation();
     abrirMenu($('#btn-menu'), [
-      { icono: 'i-ajustes', texto: 'Configuración', onclick: () => { location.hash = '#/configuracion'; } },
+      { icono: 'i-ajustes', texto: 'Configuración', onclick: () => abrirConfiguracion().catch(avisarError) },
       { icono: 'i-historial', texto: 'Historial', onclick: () => { location.hash = '#/historial'; } },
       'sep',
       { icono: 'i-refrescar', texto: 'Reiniciar la herramienta', detalle: 'Se cierra y vuelve a abrir sola', onclick: reiniciarHerramienta },

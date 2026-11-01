@@ -6,5 +6,7 @@ __pycache__/
 *.sqlite
 sesion_chrome/
 dist/
+# El acceso directo que crea la herramienta al abrirse (app/acceso_directo.py).
+*.lnk
 tests/_tmp/
 tests/palabras_prohibidas.txt

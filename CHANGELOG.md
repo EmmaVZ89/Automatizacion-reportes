@@ -15,8 +15,20 @@
   corregir en anaranjado). Sección **Control de servicios administrativos** con tres solapas: Mes en curso (lo
   facturado o pendiente del mes), No exigibles (el mes de facturación todavía no comenzó) e Histórico (todo lo
   anterior; ya no hay Año en curso). **Comprobantes abiertos** es una sección propia.
-- Una versión corrida antes de un cambio del reporte avisa que conviene correr una nueva. Las marcas pasan a la
-  nueva versión aunque la fila haya cambiado de solapa (por ejemplo, de Mes en curso a Histórico).
+- Las marcas pasan a la nueva versión aunque la fila haya cambiado de solapa (por ejemplo, de Mes en curso a
+  Histórico).
+- Acceso directo **Reportes de cierre** con el ícono de la herramienta, como el de PedidosIA: se crea solo la
+  primera vez, en el Escritorio y en la carpeta de la herramienta, y abre sin la ventana negra. Si la carpeta se
+  mueve, se corrige al abrirla; en Configuración se puede volver a crear.
+- Una versión corrida antes de un cambio del reporte lo avisa en naranja, con **Correr una versión nueva** (mismos
+  archivos y opciones, en un clic).
+- Los títulos de las secciones de Resultados (y los controles a generar de Controles SGA) llevan mayúscula sólo en
+  la primera palabra.
+- Botón **Inicio** en la barra: la pantalla inicial, igual que el logo. **Cierres** muestra la lista de cierres y
+  queda marcado mientras se trabaja dentro de un cierre.
+- **Configuración** se abre en una ventana, como en PedidosIA: el índice de secciones a la izquierda (Apariencia,
+  Archivos, Valores por defecto, Dónde están los datos, Acceso directo, La herramienta) y una sección a la vista.
+- Corregido: en algunas páginas, al bajar, el encabezado del reporte temblaba entre la versión completa y la achicada.
 - Corregido: la ventana de algunos avisos mostraba el texto "null".
 
 ## 2026.10.31

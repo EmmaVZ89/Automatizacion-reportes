@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote
 
-from . import catalogo, exportar
+from . import acceso_directo, catalogo, exportar
 from .almacen import escribir_json_atomico, leer_json
 from .reportes._comun.entradas import ordenar_tramos
 from .seguridad import EXT_ENTRADA, nombre_seguro, ruta_confinada
@@ -42,6 +42,7 @@ class Api:
         ruta('PATCH', '/api/configuracion', self.guardar_configuracion)
         ruta('POST', '/api/cerrar', self.cerrar)
         ruta('POST', '/api/reiniciar', self.reiniciar)
+        ruta('POST', '/api/acceso-directo', self.acceso_directo)
         ruta('POST', '/api/limpieza', self.limpieza)
         ruta('GET', '/api/parametros/([a-z_]+)', self.parametros)
         ruta('GET', '/api/cierres', self.cierres)
@@ -185,6 +186,15 @@ class Api:
             raise _error(409, 'Hay un reporte corriendo. Esperá a que termine o cancelalo antes de cerrar.')
         self._json(h, {'ok': True})
         self.s.apagar(0.5)
+
+    def acceso_directo(self, h, mt, q):
+        self._body(h)
+        try:
+            rutas = acceso_directo.crear_en_escritorio(self.s.raiz, self.s.dir_datos)
+        except (OSError, ValueError) as e:
+            self.s.registro.warning('No se pudo crear el acceso directo: %s', e)
+            raise _error(500, 'No se pudo crear el acceso directo. El detalle quedó en el registro de la herramienta.')
+        self._json(h, {'rutas': rutas})
 
     def reiniciar(self, h, mt, q):
         self._body(h)

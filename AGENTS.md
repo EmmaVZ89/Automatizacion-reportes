@@ -37,6 +37,12 @@ Diseño: `docs/superpowers/specs/2026-10-31-herramienta-cierre-design.md`. Plan:
 - `app/exportar.py`: Excel "trabajado" (columnas Estado revisión y Observaciones), `exportar_vista` (las filas de una
   consulta, sin paginar, con las columnas elegidas; lo usan el botón "Exportar" de la grilla y el armado del paso Exportar),
   exportar/importar cierre (ZIP).
+- `app/acceso_directo.py` + `app/iniciar.vbs`: acceso directo "Reportes de cierre.lnk" (wscript → `iniciar.vbs`, que
+  busca Python como el .bat y corre `app.arranque` sin consola). Lo asegura `python -m app.arranque` en un hilo
+  (`main(acceso=...)`; las pruebas llaman a `main` sin `acceso` y nunca crean accesos reales): en la carpeta de la
+  herramienta siempre, en el Escritorio la primera vez, y los corrige si la carpeta cambió (`datos/acceso_directo.json`).
+  El ícono (`datos/reportes-de-cierre.ico`) se dibuja en Python a partir del logo. Los .lnk se escriben con
+  WScript.Shell desde PowerShell. `POST /api/acceso-directo` (Configuración) lo vuelve a crear.
 - `app/origenes.py` + `app/reportes/_comun/cache_filas.py`: Excel de origen de una fila. Cada hoja de entrada se copia
   una vez, en un subproceso, a `archivos/<sha8>/filas-<hoja>.sqlite` (bloques de filas comprimidos, con formatos de
   número y anchos); la copia se arma al terminar la corrida o al pedirla. El reporte que lo ofrece marca la salida con
@@ -59,7 +65,7 @@ en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_tria
   `revisable: False` la vuelve informativa (totales, respaldos): se muestra aparte, sin selección ni columna de
   revisión, y no suma pendientes (`Dominio.tablas_informativas`).
 - `app/web/`: `index.html`, `estilos.css`, `app.js`. JS vainilla, sin build, **sin `innerHTML`**: todo se construye
-  con `el()`. Dos temas por variables CSS (`[data-tema]`, **claro por defecto**), contraste ≥ 4,5:1 verificado por
+  con `el()`. Configuración es una ventana (`abrirConfiguracion(seccion)`; `#/configuracion` la abre sobre Inicio). El encabezado fijo del reporte, achicado, conserva su alto con margen (`fijarCabecera`): si la página se acortara, el navegador corregiría el scroll y temblaría. Dos temas por variables CSS (`[data-tema]`, **claro por defecto**), contraste ≥ 4,5:1 verificado por
   test. Íconos: sprite SVG en `index.html` (`icono('i-…')`), nunca imágenes ni fuentes externas. Piezas comunes en
   `app.js`: `dialogo()` (confirmaciones con tono), `abrirModal()`, `abrirMenu()`/`botonMenu()`, `aviso()` (avisos
   con barra de tiempo), `abrirAyuda(clave)` (cajón de ayuda: `AYUDA_PASOS`, `AYUDA_GENERAL`), `bienvenida()` (guía

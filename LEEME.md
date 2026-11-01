@@ -17,12 +17,15 @@ biblioteca de comprobantes con tu usuario, como lo hacías hasta ahora).
 1. Extraé el ZIP en una carpeta de tu PC **fuera de OneDrive y de SharePoint**. Por ejemplo,
    `C:\Reportes de cierre`. Si la dejás dentro de una carpeta sincronizada, los archivos grandes se
    suben solos y la herramienta se vuelve lenta o falla.
-2. Hacé doble clic en **`Reportes de cierre.bat`**. Se abre el navegador con la herramienta. Podés
-   crear un acceso directo a ese archivo en el escritorio para abrirla desde ahí.
+2. Hacé doble clic en **`Reportes de cierre.bat`**. Se abre el navegador con la herramienta. La
+   primera vez crea sola el acceso directo **Reportes de cierre**, con su ícono, en el Escritorio y en la
+   carpeta de la herramienta: desde ahí en adelante abrila con ese acceso directo (no muestra la ventana
+   negra). Si lo borraste, en Configuración está **Crear el acceso directo en el Escritorio**. Si movés la
+   carpeta de la herramienta, abrila una vez con el `.bat` y el acceso directo se corrige solo.
 3. Si al abrirla te dice que falta Python (o no abre nada), instalalo desde
    [python.org/downloads](https://www.python.org/downloads/). En la primera pantalla del instalador
    marcá la casilla **"Add Python to PATH"** antes de apretar Install. Después volvé a hacer doble clic
-   en `Reportes de cierre.bat`.
+   en `Reportes de cierre.bat` (o en el acceso directo, que te avisa lo mismo con un mensaje).
 4. Sólo para **Descarga de facturas** hace falta un paso más, una única vez: doble clic en
    **`Instalar descarga de facturas.bat`**. Tarda entre 2 y 5 minutos y necesita internet. Hasta que lo
    hagas, la sección **Facturas** te avisa que todavía no está instalada; los reportes del cierre
@@ -44,7 +47,9 @@ queda así para la próxima vez. También se cambia en Configuración.
 
 ### Crear el cierre del mes
 
-Al abrir la herramienta ves la pantalla **Cierres**. Con **Nuevo cierre** elegís el mes en un
+Al abrir la herramienta ves la pantalla de **Inicio**: el cierre en curso y, debajo, todos los cierres. A
+esa pantalla volvés desde **Inicio**, en la barra de arriba, o tocando el logo con el nombre de la
+herramienta; **Cierres** muestra sólo la lista de cierres. Con **Nuevo cierre** elegís el mes en un
 calendario; la fecha de corte se propone como el último día del mes y se puede cambiar. Esa fecha queda
 propuesta en todos los reportes de ese cierre. Cada cierre muestra el estado de sus cuatro reportes: sin
 correr, en curso, terminado con tantas filas pendientes, o resultado final.
@@ -67,7 +72,9 @@ correr, en curso, terminado con tantas filas pendientes, o resultado final.
    **Continuar**.
 4. **Resultados.** A la izquierda, las tablas de resultado, agrupadas bajo el título de su Excel (por
    ejemplo, *Control Netos Impuestos* con MORA, Mes en curso e Histórico): tocá el título para abrirlas o
-   cerrarlas. A la derecha, la tabla elegida con búsqueda, filtros y orden. Marcás cada fila como **Revisada** u **Omitir**, o le anotás una
+   cerrarlas. A la derecha, la tabla elegida con búsqueda, filtros y orden. Si la versión se corrió
+   antes de un cambio del reporte, un aviso naranja arriba lo dice: **Correr una versión nueva** la corre
+   con los mismos archivos y opciones, y lo que ya revisaste pasa solo. Marcás cada fila como **Revisada** u **Omitir**, o le anotás una
    **Observación**. Arriba ves cuántas quedan pendientes. Las tablas de totales o de respaldo (por
    ejemplo *Resumen*) aparecen aparte, bajo **Información**: se consultan, pero no se revisan fila por
    fila ni cuentan como pendientes.
