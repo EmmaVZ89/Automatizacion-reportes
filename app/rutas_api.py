@@ -6,10 +6,11 @@ import time
 from pathlib import Path
 from urllib.parse import unquote
 
-from . import acceso_directo, catalogo, exportar
+from . import acceso_directo, catalogo, exportar, registro_corrida
 from .almacen import escribir_json_atomico, leer_json
 from .reportes._comun.entradas import ordenar_tramos
 from .seguridad import EXT_ENTRADA, nombre_seguro, ruta_confinada
+from .version import VERSION
 
 MAX_BODY = 20 * 1024 * 1024
 BLOQUE = 1024 * 1024
@@ -78,6 +79,7 @@ class Api:
         ruta('GET', '/api/ejecuciones/([^/]+)/archivos', self.archivos_salida)
         ruta('GET', '/api/ejecuciones/([^/]+)/archivos/(.+)', self.archivo_salida)
         ruta('GET', '/api/ejecuciones/([^/]+)/registro', self.registro)
+        ruta('GET', '/api/ejecuciones/([^/]+)/registro/descargar', self.descargar_registro)
         ruta('GET', '/api/trabajos', self.trabajos)
         ruta('GET', '/api/trabajos/(\\d+)', self.trabajo)
         ruta('POST', '/api/trabajos/(\\d+)/continuar', self.continuar)
@@ -713,6 +715,20 @@ class Api:
         ruta = self.s.dominio.rutas(e['id'])['registro']
         texto = ruta.read_text(encoding='utf-8', errors='replace') if ruta.exists() else ''
         self._json(h, {'registro': texto[-200000:]})
+
+    def descargar_registro(self, h, mt, q):
+        """El registro de una corrida en un .txt para mandar a soporte (ver app/registro_corrida.py)."""
+        e = self._ejecucion(mt.group(1))
+        d = catalogo.obtener(e['reporte']) if e['reporte'] in catalogo.REPORTES else {'nombre': e['reporte']}
+        c = self.s.dominio.obtener_cierre(e['cierreId']) or {}
+        ruta = self.s.dominio.rutas(e['id'])['registro']
+        texto = ruta.read_text(encoding='utf-8', errors='replace') if ruta.exists() else ''
+        v = d.get('variantes')
+        valor = self.s.dominio.variante_de(e) if v else None
+        variante = next((o['titulo'] for o in v['opciones'] if o['valor'] == valor), '') if v else ''
+        datos = registro_corrida.armar(e, c, d, texto, VERSION, variante).encode('utf-8')
+        partes = ['Registro', d.get('nombre') or e['reporte'], self._corto(e), _mes_corto(c['periodo']) if c.get('periodo') else '', f'v{e["version"]}']
+        self.s.responder_bytes(h, datos, 'text/plain; charset=utf-8', ' - '.join(x for x in partes if x) + '.txt')
 
     # ---------- trabajos ----------
     def trabajos(self, h, mt, q):

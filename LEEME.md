@@ -141,7 +141,8 @@ Fe, Liquidación). En Archivos cada ERP dice de qué fondo es. El fondo se elige
 (mientras la versión no corrió) y ahí mismo se valida: si el ERP elegido es del otro fondo, un aviso te ofrece
 usar ese fondo o volver a elegir el ERP, y no deja correr hasta resolverlo. El fondo se ve en todos los pasos. En Opciones
 elegís si el ERP se bajó con *sólo saldos abiertos* o *completo*: cambia qué dice el resultado cuando un
-comprobante está de un solo lado. Devuelve un Excel con dos solapas: *Resumen* (totales, cantidades por
+comprobante está de un solo lado. Devuelve un Excel con dos solapas (si los comprobantes no entran en una solapa de
+Excel, más de un millón, el detalle sigue en *Conciliación general (2)*, *(3)*…): *Resumen* (totales, cantidades por
 estado, alertas y archivos usados) y *Conciliación general* (una fila por comprobante con saldo SGA,
 saldo ERP, diferencia y estado: COINCIDE, DIFERENCIA, SOLO EN SGA — REVISAR EN ERP, etc.). Con *sólo
 saldos abiertos*, un comprobante de SGA que no figura en el ERP se compara contra cero: da COINCIDE si su
@@ -215,7 +216,8 @@ En Configuración también está **Limpieza**: borra los Excel de entrada que ni
 En esa carpeta queda también el **registro** de la herramienta: anota cada vez que se abre y se cierra
 (con el motivo: desde la pantalla, para reiniciarse o por inactividad), si la vez anterior terminó sin
 cerrarse bien, los errores, las caídas del programa y cuánto tardó cada Excel de origen. Se descarga en un solo archivo desde Configuración → La herramienta →
-**Reportar un problema**.
+**Reportar un problema**. El registro de **cada corrida** (archivos, opciones, cuánto tardó cada paso y qué pasó)
+se baja aparte, con **Descargar el registro** en el paso Ejecución o en el menú de la versión en Historial.
 
 ## Problemas frecuentes
 
@@ -230,7 +232,7 @@ cerrarse bien, los errores, las caídas del programa y cuánto tardó cada Excel
 | "Hay dos archivos de …; dejá uno solo" o "Archivo duplicado por contenido" | Subiste dos veces el mismo archivo, o dos del mismo tipo que no son tramos. Sacá uno. Si son las dos partes de un reporte cortado, agregalos los dos en la misma entrada. |
 | "El archivo supera los … MB permitidos" | El límite se sube en Configuración. Antes fijate que sea el archivo correcto: un histórico de SGA pesa unas decenas de MB. |
 | "Posible descarga recortada" | Es un aviso, no un error. Fijate si el sistema te dio un segundo archivo y agregalo como tramo. |
-| El reporte terminó con error | Abrí **"Ver el registro completo"** en el paso Ejecución. Si el mensaje te dice qué corregir (una columna que falta, un importe vacío), corregí el archivo de origen y volvé a correr. Si no, mandá el registro a quien te dio la herramienta: el botón lo descarga como archivo de texto; podés adjuntarlo a un mail. |
+| El reporte terminó con error | Leé el mensaje del paso Ejecución. Si te dice qué corregir (una columna que falta, un importe vacío), corregí el archivo de origen y volvé a correr. Si no, tocá **"Descargar el registro"** (en el paso Ejecución, o en el menú de esa versión en Historial) y mandale el archivo a quien te dio la herramienta; podés adjuntarlo a un mail. Dice qué archivos y opciones usó la corrida, cuánto tardó cada paso y qué pasó. |
 | "Se cerró la herramienta mientras el reporte corría" | Se apagó la PC o se cerró la herramienta con un reporte en marcha. Volvé a ejecutar esa versión; no quedó nada a medias en tus marcas. |
 | Excel de origen: "Ya no está el archivo de entrada…" | La **Limpieza** de Configuración borró un Excel que usó esa versión. Agregalo de nuevo en el paso Archivos y corré una versión nueva. |
 | Facturas: "Todavía no está instalada" | Hacé doble clic en `Instalar descarga de facturas.bat`, esperá a que diga Listo y volvé a abrir la herramienta. |

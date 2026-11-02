@@ -138,5 +138,51 @@ class ExportarTests(unittest.TestCase):
                 s.cerrar()
 
 
+class HojasDeContinuacionTests(unittest.TestCase):
+    """Una tabla que no entra en una hoja de Excel sigue en otras, con el mismo encabezado (se prueba con el límite
+    achicado), y un cierre exportado así se vuelve a importar entero."""
+
+    def test_tabla_que_no_entra_en_una_hoja_sigue_en_otra(self):
+        from app.reportes._comun import xlsx_escritura
+        with carpeta_temporal() as d, mock.patch.object(xlsx_escritura, 'MAX_FILAS_EXCEL', 7):  # 3 filas de datos por hoja
+            ruta = d / 'libro.xlsx'
+            escritas = xlsx_escritura.escribir_libro(ruta, [
+                {'nombre': 'Resumen', 'columnas': ['Control'], 'filas': [['Total']]},
+                {'nombre': 'Revisar', 'columnas': ['ID', 'Importe'], 'tipos': ['texto', 'numero'], 'nota': 'Todas las filas.',
+                 'filas': [[str(i), str(i * 10)] for i in range(8)], 'resaltadas': {(4, 1)}}])
+            self.assertEqual(escritas, [1, 8])
+            libro = openpyxl.load_workbook(ruta)
+            self.assertEqual(libro.sheetnames, ['Resumen', 'Revisar', 'Revisar (2)', 'Revisar (3)'])
+            partes = [libro[n] for n in libro.sheetnames[1:]]
+            self.assertTrue(all([c.value for c in h[4]] == ['ID', 'Importe'] for h in partes))
+            self.assertEqual([[r[0] for r in h.iter_rows(min_row=5, values_only=True)] for h in partes], [['0', '1', '2'], ['3', '4', '5'], ['6', '7']])
+            self.assertEqual(partes[1]['A2'].value, 'Sigue de la hoja «Revisar»: en una hoja de Excel entran 3 filas. Todas las filas.')
+            self.assertEqual(partes[1]['B6'].fill.fgColor.rgb, 'FFF4B183')  # la fila 4 de la tabla, resaltada, cae en la segunda hoja
+            self.assertEqual(partes[0]['A4'].value, 'ID')
+
+    def test_nombre_de_hoja_respeta_los_31_caracteres(self):
+        from app.reportes._comun.xlsx_escritura import nombre_de_hoja
+        self.assertEqual(nombre_de_hoja('Conciliación general', 2), 'Conciliación general (2)')
+        self.assertEqual(nombre_de_hoja('x' * 40), 'x' * 31)
+        self.assertEqual(nombre_de_hoja('x' * 40, 12), 'x' * 26 + ' (12)')
+
+    def test_cierre_con_una_tabla_en_varias_hojas_se_importa_entero(self):
+        from app.reportes._comun import xlsx_escritura
+        with carpeta_temporal() as d, mock.patch.object(xlsx_escritura, 'MAX_FILAS_EXCEL', 6):  # 2 filas de datos por hoja
+            dom = Dominio(d / 'a', reconocer=lambda r: {'tipo': 'x'})
+            c = dom.crear_cierre('2026-10', '2026-10-31', 'Octubre')
+            filas = [['Diferencia', str(i)] for i in range(5)]
+            e = ejecucion_con_tablas(dom, c['id'], 'control_cheques', [('revisar', ['Motivo', 'ID SGA'], filas, ['ID SGA', 'Motivo'], [])])
+            dom.tablas(e['id']).marcar('revisar', [3], 'omitida', obs='en la segunda hoja')
+            dom.guardar_triage(e['id'])
+            datos = exportar.exportar_cierre(dom, c['id'])
+            otro = Dominio(d / 'b', reconocer=lambda r: {})
+            c2 = exportar.importar_cierre(otro, datos)
+            e2 = otro.listar_ejecuciones(c2['id'])[0]
+            r = otro.tablas(e2['id']).consultar('revisar')
+            self.assertEqual([f['valores'][1] for f in r['filas']], ['0', '1', '2', '3', '4'])
+            self.assertEqual([(f['_estado'], f['_obs']) for f in r['filas']][3], ('omitida', 'en la segunda hoja'))
+
+
 if __name__ == '__main__':
     unittest.main()

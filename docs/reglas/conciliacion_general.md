@@ -205,6 +205,11 @@ El histórico de SGA es el mismo para los dos (se filtra por `FondoDeRiesgo`); e
 | `Respaldo_tecnico/trazabilidad.sqlite`, `Respaldo_tecnico/COMPLETADO.txt` | — | Fila por fila de ambas fuentes con su clasificación; constancia de fin | — |
 
 - En la solapa Conciliación general los importes son números; CUIT, cliente y comprobante son texto.
+- **Más comprobantes de los que entran en una hoja** (02/11/2026, con el ERP completo cortado por fechas). Una hoja
+  de Excel lleva 1.048.576 filas con el encabezado. Si el detalle no entra, sigue en `Conciliación general (2)`,
+  `(3)`…, cada una con el encabezado y el filtro; lo mismo el `Resumen` (`Resumen (2)`…), que lleva una fila por
+  alerta. El legado (y la herramienta hasta la 2026.11.01) cortaba la corrida al final con «El detalle supera el
+  máximo de filas de Excel.»; el cálculo no cambió. La grilla y el CSV de respaldo no tienen ese límite.
 - `Fecha SGA` y `Fecha ERP` (pedido de quien usa el reporte, 01/11/2026) son la fecha del comprobante en cada
   sistema, a la izquierda de `Comprobante`. En SGA se toma `FechaFactura`, salvo que el comprobante de la fila sea
   de imputación (subrecibo, recibo, pendiente o NC imputada: `NumeroComprobanteImputacion` o `Subrecibo`), que
@@ -234,7 +239,13 @@ El histórico de SGA es el mismo para los dos (se filtra por `FondoDeRiesgo`); e
   `MP`; `RC-X`, `RC-R`, `RC-O`, `OP-X`, `SUBRECIBO` o una combinación con " / " son `SR` u `OPX`; el resto, el
   mismo tipo). Arma una hoja con el encabezado y las filas de cada archivo de SGA, dos filas libres y el
   encabezado y las filas de cada archivo de ERP, con los valores, formatos de número y anchos del original. Un
-  lado sin filas no aparece. A diferencia de `Origen SGA/ERP (primeras 5)`, trae todas las filas.
+  lado sin filas no aparece. A diferencia de `Origen SGA/ERP (primeras 5)`, trae todas las filas. Con varios tramos,
+  cada archivo es un bloque con su propio encabezado.
+- **Detalle de la lectura** (`ejecutar.informar_lectura`). Al terminar, bien o con error, el registro de la corrida
+  lleva por archivo las filas que se tomaron (y las del archivo, si se llegó a `Resumen.json`), su rango de fechas
+  (de `trazabilidad.sqlite`) y los tipos de transacción del ERP; después, la cantidad de comprobantes y cuántos hay
+  de cada resultado. Sirve para ver si dos tramos del ERP se superponen. Antes de correr se borran el
+  `trazabilidad.sqlite` y el `Resumen.json` que haya dejado otra corrida en la misma carpeta.
 
 ## Limitaciones y advertencias
 

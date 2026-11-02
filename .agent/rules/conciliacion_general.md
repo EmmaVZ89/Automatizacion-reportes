@@ -15,8 +15,8 @@ globs: ["app/reportes/conciliacion_general/**"]
 
 - `reporte.py`: definición `REPORTE` (entradas `sga`/`erp`, parámetros `alcance`, `corte`, `fondo`, salidas `resumen` y `general` con sus claves de revisión).
 - `motor.py`: copia de `legado/conciliacion_general/conciliar.py` (v1.4) con parámetros explícitos, tramos y los cambios de la 1.5; escribe el CSV de respaldo, `Resumen.json`, `trazabilidad.sqlite`.
-- `excel.py`: escritor XLSX propio (sin openpyxl) que arma `Conciliacion_general.xlsx` con las solapas Resumen y Conciliación general; `LABELS` renombra tres estados.
-- `ejecutar.py`: punto de entrada del subproceso.
+- `excel.py`: escritor XLSX propio (sin openpyxl) que arma `Conciliacion_general.xlsx` con las solapas Resumen y Conciliación general, y sus continuaciones `(2)`, `(3)`… cuando no entran en una hoja (`MAX_FILAS`; nombres con `_comun/xlsx_escritura.nombre_de_hoja`); `LABELS` renombra tres estados.
+- `ejecutar.py`: punto de entrada del subproceso. Al terminar, bien o con error, deja en el registro el detalle de la lectura (`informar_lectura`: filas y fechas por archivo, comprobantes, resultados).
 - Fondos (01/11/2026): `fondo` es un desplegable y la variante del reporte (`REPORTE['variantes']`). El motor acepta `Liquidación` como tipo de transacción, corta si el ERP es de otro fondo o mezcla fondos (prefijos de asiento en `_comun/detectores.PREFIJOS_FONDO`) y si SGA no tiene filas del fondo. Ver "Fondos de riesgo" en `docs/reglas/conciliacion_general.md`.
 - `Fecha SGA` / `Fecha ERP` (informativas, 01/11/2026): `fecha_iso` por fila (SGA: `FechaFactura`, o `FechaComprobanteImputacion` si el comprobante es de imputación; ERP: `Fecha`), la más antigua por clave. Van antes de `Comprobante`: `excel.py` ubica las columnas por nombre, y la regresión (`cambios_conciliacion.leer_csv`) y los dorados las comparan aparte.
 - `origen.py`: filas de origen de una fila del resultado, leídas de `Respaldo_tecnico/trazabilidad.sqlite` (el `Tipo` visible se traduce al tipo interno: `PENDIENTE` → `MP`; `RC-X`, `OP-X`, `SUBRECIBO`… → `SR`/`OPX`). Lo usa `app/origenes.py` para el Excel de origen; no cambia la matemática.

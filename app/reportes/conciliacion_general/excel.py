@@ -3,11 +3,14 @@
 Copia de legado/conciliacion_general/excel_general.py. Los lectores del CSV (`filas_resumen`,
 `filas_detalle`) se exponen aparte para que ejecutar.py vuelque las mismas filas a sqlite."""
 import csv
+import itertools
 from datetime import date
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 import re
+
+from .._comun.xlsx_escritura import nombre_de_hoja
 
 NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 LABELS = {
@@ -40,6 +43,8 @@ ANCHOS = {'Tipo': 20, 'Cliente': 14, 'Fecha SGA': 12, 'Fecha ERP': 12, 'Comproba
           'Origen SGA (primeras 5)': 55, 'Origen ERP (primeras 5)': 55, 'Estado revision': 25, 'Observaciones': 65, 'Fondo': 30,
           'Detalle identificacion': 55}
 EXCEL_CERO = date(1899, 12, 30)
+MAX_FILAS = 1048576  # filas de una hoja de Excel, encabezado incluido
+HOJA_DETALLE = 'Conciliación general'
 
 def encabezado(csv_path):
     with Path(csv_path).open(encoding='utf-8-sig', newline='') as f:
@@ -55,7 +60,7 @@ def sheet(z, name, rows, numeric, widths, filter_rows=False, dates=(), money=(6,
         write('</cols><sheetData>')
         count = 0
         for count, row in enumerate(rows, 1):
-            if count > 1048576: raise ValueError('El detalle supera el máximo de filas de Excel.')
+            if count > MAX_FILAS: raise ValueError('El detalle supera el máximo de filas de Excel.')
             write(f'<row r="{count}">')
             for i, value in enumerate(row, 1):
                 if value == '' or value is None: continue
@@ -107,21 +112,34 @@ def export_excel(csv_path, output):
     """Separar controles v1.3 del detalle; compatible con resultados anteriores."""
     csv_path, output = Path(csv_path), Path(output)
     summary = [list(COLUMNAS_RESUMEN)] + filas_resumen(csv_path)
+    # Lo que no entra en una hoja sigue en "Conciliación general (2)", "(3)"…, con el mismo encabezado. También el
+    # Resumen, que lleva una fila por alerta.
+    capacidad = MAX_FILAS - 1
+    def partes(nombre, cantidad):
+        return [nombre_de_hoja(nombre, k) for k in range(1, max(1, -(-cantidad // capacidad)) + 1)]
+    hojas_resumen = partes('Resumen', len(summary) - 1)
+    hojas = hojas_resumen + partes(HOJA_DETALLE, sum(1 for _ in filas_detalle(csv_path)) - 1)
     temporary = output.with_suffix('.temporal.xlsx')
     try:
         with ZipFile(temporary, 'w', ZIP_DEFLATED, compresslevel=6) as z:
-            z.writestr('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in (1,2))+'</Types>')
+            z.writestr('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1, len(hojas) + 1))+'</Types>')
             z.writestr('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
-            z.writestr('xl/workbook.xml', f'<workbook xmlns="{NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Resumen" sheetId="1" r:id="r1"/><sheet name="Conciliación general" sheetId="2" r:id="r2"/></sheets></workbook>')
-            z.writestr('xl/_rels/workbook.xml.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+''.join(f'<Relationship Id="r{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in (1,2))+'<Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
+            z.writestr('xl/workbook.xml', f'<workbook xmlns="{NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+''.join(f'<sheet name={quoteattr(x)} sheetId="{i}" r:id="r{i}"/>' for i, x in enumerate(hojas, 1))+'</sheets></workbook>')
+            z.writestr('xl/_rels/workbook.xml.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+''.join(f'<Relationship Id="r{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, len(hojas) + 1))+'<Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
             z.writestr('xl/styles.xml', f'<styleSheet xmlns="{NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF24476A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
             # Resumen: texto explícito para alcances/estados, importes numéricos.
-            sheet(z,'xl/worksheets/sheet1.xml',summary,{2,3,4},[48,24,24,24,48,100])
+            controles = iter(summary[1:])
+            for i in range(1, len(hojas_resumen) + 1):
+                sheet(z,f'xl/worksheets/sheet{i}.xml',itertools.chain([summary[0]], itertools.islice(controles, capacidad)),{2,3,4},[48,24,24,24,48,100])
             cab = encabezado(csv_path)
             posicion = lambda nombres: {i for i, n in enumerate(cab, 1) if n in nombres}
-            n = sheet(z,'xl/worksheets/sheet2.xml',filas_detalle(csv_path),posicion(NUMERICAS),[ANCHOS.get(x, 20) for x in cab],True,
-                      dates=posicion(FECHAS),money=posicion(IMPORTES))
+            detalle = filas_detalle(csv_path)
+            cabecera = next(detalle)
+            n = 0
+            for i in range(len(hojas_resumen) + 1, len(hojas) + 1):
+                n += sheet(z,f'xl/worksheets/sheet{i}.xml',itertools.chain([cabecera], itertools.islice(detalle, capacidad)),posicion(NUMERICAS),
+                           [ANCHOS.get(x, 20) for x in cab],True,dates=posicion(FECHAS),money=posicion(IMPORTES)) - 1
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
-    return n-1
+    return n

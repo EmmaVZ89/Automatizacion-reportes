@@ -36,7 +36,12 @@ Diseño: `docs/superpowers/specs/2026-10-31-herramienta-cierre-design.md`. Plan:
   con los demás filtros aplicados (parámetro `valoresDe` en la URL).
 - `app/exportar.py`: Excel "trabajado" (columnas Estado revisión y Observaciones), `exportar_vista` (las filas de una
   consulta, sin paginar, con las columnas elegidas; lo usan el botón "Exportar" de la grilla y el armado del paso Exportar),
-  exportar/importar cierre (ZIP).
+  exportar/importar cierre (ZIP). Una tabla que no entra en una hoja de Excel sigue en otras con el mismo encabezado
+  ("Nombre (2)"…: `xlsx_escritura.escribir_libro`, `MAX_FILAS_EXCEL`, `nombre_de_hoja`); `importar_cierre` las junta.
+- `app/registro_corrida.py`: el registro de una corrida para soporte (`GET /api/ejecuciones/<id>/registro/descargar`,
+  botón "Descargar el registro" de Ejecución e Historial): reporte, cierre, versión, horario, estado y error,
+  opciones con sus títulos, archivos del cierre que usó y el `registro.log` completo. Cada línea del `registro.log`
+  lleva la hora (`Trabajos._escribir_registro`).
 - `app/acceso_directo.py` + `app/iniciar.vbs`: acceso directo "Reportes de cierre.lnk" (wscript → `iniciar.vbs`, que
   busca Python como el .bat y corre `app.arranque` sin consola). Lo asegura `python -m app.arranque` en un hilo
   (`main(acceso=...)`; las pruebas llaman a `main` sin `acceso` y nunca crean accesos reales): en la carpeta de la

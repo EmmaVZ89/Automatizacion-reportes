@@ -221,12 +221,16 @@ def exportar_cierre(dominio, cierre_id):
 def _leer_tabla_exportada(datos):
     import openpyxl
     libro = openpyxl.load_workbook(io.BytesIO(datos), read_only=True)
-    hoja = libro.worksheets[0]
-    filas = hoja.iter_rows(min_row=4, values_only=True)
-    encabezado = [str(v) if v is not None else '' for v in next(filas)]
-    cuerpo = [(['' if v is None else v for v in f] + [''] * len(encabezado))[:len(encabezado)] for f in filas if any(v is not None for v in f)]
+    encabezado, cuerpo = None, []
+    # Una tabla que no entró en una hoja sigue en las siguientes, con el mismo encabezado (escribir_libro).
+    for hoja in libro.worksheets:
+        filas = hoja.iter_rows(min_row=4, values_only=True)
+        cabeza = next(filas, None)
+        if encabezado is None:
+            encabezado = [str(v) if v is not None else '' for v in (cabeza or ())]
+        cuerpo.extend((['' if v is None else v for v in f] + [''] * len(encabezado))[:len(encabezado)] for f in filas if any(v is not None for v in f))
     libro.close()
-    return encabezado, cuerpo
+    return encabezado or [], cuerpo
 
 
 def importar_cierre(dominio, datos_zip):

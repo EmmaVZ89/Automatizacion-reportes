@@ -1,5 +1,19 @@
 # Novedades
 
+## 2026.11.02
+
+- **Conciliación general con el ERP completo de muchos años:** cuando los comprobantes no entran en una hoja de
+  Excel (1.048.575), el detalle sigue en *Conciliación general (2)*, *(3)*… con el mismo encabezado, en el Excel
+  del reporte y en los que se bajan (trabajado, vista y cierre exportado). Antes la corrida terminaba al final con
+  «El detalle supera el máximo de filas de Excel.». El cálculo no cambia.
+- **Descargar el registro**, en el paso Ejecución (termine bien o con error) y en el menú de cada versión en
+  Historial: un archivo de texto para mandarle a quien te da soporte, con el reporte, el cierre, la versión, el
+  horario, qué pasó, las opciones, los archivos y el registro completo, con la hora de cada línea. Reemplaza a
+  "Ver el registro completo", que sólo lo mostraba.
+- Conciliación general: el registro dice cuántas filas se tomaron de cada archivo, con qué rango de fechas y de qué
+  tipos, cuántos comprobantes salieron y cuántos hay de cada resultado. Así se ve, por ejemplo, si dos tramos del
+  ERP se superponen.
+
 ## 2026.11.01
 
 - **Reiniciar la herramienta**, en el menú de los tres puntos y en la franja que avisa que se actualizó: se cierra

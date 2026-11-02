@@ -506,7 +506,7 @@
     ] },
     ejecucion: { titulo: 'Paso 3: Ejecución', icono: 'i-play', partes: [
       ['p', 'El reporte corre solo. Podés cerrar la pestaña o seguir con otra cosa: sigue corriendo y lo encontrás en el cierre.'],
-      ['ul', ['Si necesita algo de vos (por ejemplo iniciar sesión en Chrome), aparece un aviso naranja con el botón para continuar.', 'Si termina con error, el mensaje dice qué pasó. En "Ver el detalle técnico" está lo que hace falta para pedir ayuda.', 'Los reportes grandes tardan entre uno y tres minutos.']],
+      ['ul', ['Si necesita algo de vos (por ejemplo iniciar sesión en Chrome), aparece un aviso naranja con el botón para continuar.', 'Si termina con error, el mensaje dice qué pasó. "Descargar el registro" baja un archivo con todo lo que hace falta para pedir ayuda (también desde Historial).', 'Los reportes grandes tardan entre uno y tres minutos.']],
     ] },
     resultados: { titulo: 'Paso 4: Resultados', icono: 'i-tabla', partes: [
       ['p', 'Cada tabla del reporte se revisa acá adentro, sin abrir Excel.'],
@@ -559,7 +559,7 @@
     { clave: 'problemas', titulo: 'Si algo sale mal', icono: 'i-alerta', partes: [
       ['qa', [['Un archivo dice "No reconocí qué reporte es"', 'Revisá que sea el Excel original descargado del sistema, sin modificar ni guardar con otro formato.'],
         ['"El archivo supera los … MB"', 'Subí el límite en Configuración (los históricos suelen pesar entre 50 y 100 MB).'],
-        ['El reporte terminó con error', 'Leé el mensaje: casi siempre dice qué falta. Si no se entiende, abrí "Ver el detalle técnico" y mandá ese texto a quien te da soporte.'],
+        ['El reporte terminó con error', 'Leé el mensaje: casi siempre dice qué falta. Si no se entiende, tocá "Descargar el registro" y mandale ese archivo a quien te da soporte.'],
         ['Dice que se cerró la herramienta mientras corría', 'Volvé a correr el reporte: se crea una versión nueva con los mismos archivos.'],
         ['La página dice "Abrí la herramienta desde su acceso directo"', 'Cerrá la pestaña y abrila con el acceso directo "Reportes de cierre".']]],
     ] },
@@ -1548,7 +1548,7 @@
       titulo.textContent = e.error ? 'No se pudo correr' : 'Todavía no corrió';
       pista.parentElement.classList.add('oculto');
       if (e.error) zonaEspera.appendChild(el('div', { class: 'caja-error' }, icono('i-alerta'), el('p', null, e.error)));
-      pie.append(el('div', { class: 'izq' }), el('div', { class: 'der' }, btn('Ir a opciones', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/2`; }, 'primario', { icono: 'i-ajustes' })));
+      pie.append(el('div', { class: 'izq' }, e.error ? botonRegistro(e) : null), el('div', { class: 'der' }, btn('Ir a opciones', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/2`; }, 'primario', { icono: 'i-ajustes' })));
       return;
     }
     const t = await api('GET', '/api/trabajos/' + e.trabajoId);
@@ -1558,6 +1558,13 @@
         try { const t2 = await api('GET', '/api/trabajos/' + e.trabajoId, undefined, { silencioso: true }); pintarTrabajo(t2); if (!(t2.estado === 'corriendo' || t2.estado === 'esperando')) detenerSondeo(); } catch (err) { /* próxima vuelta */ }
       }, 1500);
     }
+  }
+  // El registro de una corrida en un archivo, para mandar a quien da soporte (Ejecución e Historial).
+  function botonRegistro(e) {
+    return btn('Descargar el registro', () => bajarRegistro(e), 'fantasma', { icono: 'i-bajar' });
+  }
+  function bajarRegistro(e) {
+    return descargar(`/api/ejecuciones/${encodeURIComponent(e.id)}/registro/descargar`, 'Registro de la corrida', 'Juntando el registro de la corrida…').catch(avisarError);
   }
   function pintarTrabajo(t) {
     const w = estado.w;
@@ -1621,7 +1628,7 @@
         zonaEspera.appendChild(el('div', { class: 'caja-espera' }, icono('i-mano', 'xg'), el('p', null, t.espera.mensaje),
           btn(t.espera.boton || 'Continuar', async () => { try { await api('POST', `/api/trabajos/${t.id}/continuar`, { espera: t.espera.id }); } catch (err) { avisarError(err); } }, 'primario grande', { icono: 'i-play' })));
       } else if ((t.estado === 'error' || t.estado === 'interrumpido') && t.error) {
-        zonaEspera.appendChild(el('div', { class: 'caja-error' }, icono('i-alerta'), el('div', null, el('p', null, el('b', null, 'Qué pasó: '), t.error), el('p', { class: 'muted' }, 'Corregí lo que indica el mensaje y volvé a correr. Si no se entiende, copiá el detalle técnico para pedir ayuda.'))));
+        zonaEspera.appendChild(el('div', { class: 'caja-error' }, icono('i-alerta'), el('div', null, el('p', null, el('b', null, 'Qué pasó: '), t.error), el('p', { class: 'muted' }, 'Corregí lo que indica el mensaje y volvé a correr. Si no se entiende, tocá "Descargar el registro" y mandale ese archivo a quien te da soporte.'))));
       } else if (t.estado === 'ok') {
         const tablas = Object.entries(t.tablas || {});
         zonaEspera.appendChild(el('div', { class: 'caja-ok' }, icono('i-check-circulo'), el('p', null, tablas.length ? `Se generaron ${tablas.length === 1 ? 'una tabla' : tablas.length + ' tablas'} con ${n(tablas.reduce((s, [, f]) => s + f, 0))} filas para revisar.` : 'El reporte terminó.')));
@@ -1635,11 +1642,9 @@
       pie.append(el('div', { class: 'izq' }, el('span', { class: 'muted' }, 'Podés cerrar esta pestaña o seguir con otra cosa: el reporte sigue corriendo y lo ves en Tareas.')),
         el('div', { class: 'der' }, btn('Cancelar', async () => { if (await confirmar('¿Cancelar el reporte?', 'Se corta esta corrida. Tus archivos no se tocan y podés volver a correrlo cuando quieras.', 'Cancelar el reporte', 'peligro')) { try { await api('POST', `/api/trabajos/${t.id}/cancelar`, {}); } catch (err) { avisarError(err); } } }, 'peligro', { icono: 'i-detener' })));
     } else if (t.estado === 'ok') {
-      pie.append(el('div', { class: 'izq' }), el('div', { class: 'der' }, btn('Revisar los resultados', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/4`; }, 'primario grande llama', { icono: 'i-tabla' })));
+      pie.append(el('div', { class: 'izq' }, botonRegistro(e)), el('div', { class: 'der' }, btn('Revisar los resultados', () => { location.hash = `#/ejecucion/${encodeURIComponent(e.id)}/4`; }, 'primario grande llama', { icono: 'i-tabla' })));
     } else {
-      pie.append(el('div', { class: 'izq' }, btn('Ver el registro completo', async () => {
-        try { const r = await api('GET', `/api/ejecuciones/${encodeURIComponent(e.id)}/registro`); abrirModal({ titulo: 'Registro de la corrida', iconoNombre: 'i-archivo', ancho: true, cuerpo: el('div', { class: 'consola', style: 'max-height:60vh' }, r.registro || 'Vacío') }); } catch (err) { avisarError(err); }
-      }, 'fantasma', { icono: 'i-archivo' })), el('div', { class: 'der' }, btn('Corregir y volver a correr', nuevaVersion(w), 'primario', { icono: 'i-refrescar' })));
+      pie.append(el('div', { class: 'izq' }, botonRegistro(e)), el('div', { class: 'der' }, btn('Corregir y volver a correr', nuevaVersion(w), 'primario', { icono: 'i-refrescar' })));
     }
   }
 
@@ -2477,7 +2482,8 @@
     const cuerpo = el('tbody');
     for (const x of lista) {
       const r = nombres[x.reporte] || { codigo: x.reporte, nombre: x.reporte, icono: 'reporte' };
-      const acciones = [{ icono: 'i-der', texto: 'Abrir', onclick: () => { location.hash = '#/ejecucion/' + encodeURIComponent(x.id); } }, 'sep',
+      const acciones = [{ icono: 'i-der', texto: 'Abrir', onclick: () => { location.hash = '#/ejecucion/' + encodeURIComponent(x.id); } },
+        x.inicio ? { icono: 'i-bajar', texto: 'Descargar el registro', onclick: () => bajarRegistro(x) } : null, 'sep',
         { icono: 'i-basura', texto: 'Borrar esta versión', peligro: true, onclick: async () => {
           if (!await confirmar('¿Borrar esta versión?', (x.final ? 'Es el resultado final. ' : '') + 'Se pierden sus resultados y su revisión. No se puede deshacer.', 'Borrar', 'peligro')) return;
           try { await api('DELETE', `/api/ejecuciones/${encodeURIComponent(x.id)}?forzar=1`); aviso('Versión borrada.', 'ok'); if (alBorrar) alBorrar(x); else enrutar(); } catch (err) { avisarError(err); }
@@ -2489,7 +2495,7 @@
         el('td', null, fechaCorta(x.fin || x.inicio || x.creado)),
         el('td', null, chipEstado(x)),
         el('td', { style: 'min-width:160px' }, x.estado === 'ok' ? [barraRevision(x.revision), el('div', { class: 'leyenda-revision', style: 'margin-top:4px' }, el('span', null, el('b', null, n(x.revision.pendientes)), ' pendientes'))] : el('span', { class: 'muted' }, '—')),
-        el('td', { style: 'text-align:right' }, botonMenu(acciones, 'Acciones de la versión')));
+        el('td', { style: 'text-align:right' }, botonMenu(acciones.filter(Boolean), 'Acciones de la versión')));
       cuerpo.appendChild(fila);
     }
     tabla.appendChild(cuerpo);

@@ -146,16 +146,17 @@ class VistasTests(unittest.TestCase):
         self.assertTrue(set(general['vista']['primero'] + general['vista']['ocultas']) <= set(motor.HEAD + ['Fondo', 'Detalle identificacion']))
 
 
-def _conciliacion_corrida(d):
-    """Dominio con una corrida real de la conciliación sobre los archivos del dorado reglas_1_5."""
+def _conciliacion_corrida(d, archivos=None):
+    """Dominio con una corrida real de la conciliación sobre los archivos del dorado reglas_1_5, o sobre `archivos`
+    ([(clave, ruta)], en orden)."""
     catalogo.cargar()
     dom = Dominio(d / 'datos', ahora=Reloj())
     c = dom.crear_cierre('2026-10', '2026-10-31')
     e = dom.crear_ejecucion(c['id'], 'conciliacion_general')
     entradas = {}
-    for clave, nombre in (('sga', 'sga_reglas.xlsx'), ('erp', 'erp_reglas.xlsx')):
-        a = dom.agregar_archivo(c['id'], nombre, origen=DORADO / nombre)
-        entradas[clave] = [{'ruta': a['ruta'], 'nombre': nombre, 'sha256': a['sha256']}]
+    for clave, ruta in archivos or (('sga', DORADO / 'sga_reglas.xlsx'), ('erp', DORADO / 'erp_reglas.xlsx')):
+        a = dom.agregar_archivo(c['id'], ruta.name, origen=ruta)
+        entradas.setdefault(clave, []).append({'ruta': a['ruta'], 'nombre': ruta.name, 'sha256': a['sha256']})
     rutas = dom.rutas(e['id'])
     rutas['carpeta'].mkdir(parents=True, exist_ok=True)
     rutas['entradas'].write_text(json.dumps(entradas), encoding='utf-8')
@@ -274,6 +275,36 @@ class OrigenTests(unittest.TestCase):
             self.assertTrue(motor.COLUMNAS_ERP <= {str(v) for v in filas_xlsx[vacias[-1] + 1] if v})
             self.assertEqual(len(filas_xlsx) - vacias[-1] - 2, int(valor(ambos, 'Filas ERP')))
             self.assertEqual(vacias[0] - 1, int(valor(ambos, 'Filas SGA')))
+
+    def test_excel_de_origen_con_el_erp_en_dos_tramos(self):
+        """Un comprobante con filas en dos archivos del ERP: un bloque por archivo, cada uno con su encabezado."""
+        import openpyxl
+        from tests.fixtures import xlsx_sintetico
+        from tests.test_conciliacion_general import E, FONDO, S
+        with carpeta_temporal() as d:
+            archivos = [('sga', xlsx_sintetico(d / 'sga.xlsx', [('Datos', [S, [FONDO, '1', 'F1', '100', 'Otros', '', '', '201', 'Socio']])])),
+                        ('erp', xlsx_sintetico(d / 'erp_1.xlsx', [('Datos', [E, ['80', '1', 'F1', '', '', '', 'Cliente']])])),
+                        ('erp', xlsx_sintetico(d / 'erp_2.xlsx', [('Datos', [E, ['5', '1', 'F1', '', '', '', 'Pago'], ['7', '2', 'F2', '', '', '', 'Pago']])]))]
+            dom, e = _conciliacion_corrida(d, archivos)
+            o = Origenes(dom)
+            o.preparar(e)
+            for _ in range(200):
+                st = o.estado(e)
+                if st['listo'] or st.get('error'):
+                    break
+                time.sleep(0.1)
+            self.assertTrue(st['listo'], st)
+            t = dom.tablas(e['id'])
+            r = t.consultar('general', cantidad=50)
+            f1 = next(f for f in r['filas'] if f['valores'][r['columnas'].index('Comprobante')] == 'F1')
+            self.assertEqual(f1['valores'][r['columnas'].index('Filas ERP')], '2')
+            hoja = openpyxl.load_workbook(io.BytesIO(o.libro(e, 'general', f1['_fila'])[0])).active
+            filas_xlsx = [[c.value for c in fila] for fila in hoja.iter_rows()]
+            encabezados_erp = [i for i, f in enumerate(filas_xlsx) if motor.COLUMNAS_ERP <= {str(v) for v in f if v}]
+            self.assertEqual(len(encabezados_erp), 2)  # erp_1 y erp_2, cada uno con su encabezado
+            saldos = [f[0] for i, f in enumerate(filas_xlsx) if i - 1 in encabezados_erp]
+            self.assertEqual([str(v) for v in saldos], ['80', '5'])
+            self.assertEqual(len([f for f in filas_xlsx if all(v is None for v in f)]), 4)  # SGA, 2 libres, ERP 1, 2 libres, ERP 2
 
     def test_netos_baja_la_fila_del_historico_con_las_celdas_observadas(self):
         import openpyxl

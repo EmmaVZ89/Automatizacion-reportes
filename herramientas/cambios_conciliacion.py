@@ -205,9 +205,16 @@ def xlsx_consistente(xlsx_nuevo, csv_nuevo):
     libro = openpyxl.load_workbook(xlsx_nuevo, read_only=True)
     errores = []
     try:
-        hoja = libro['Conciliación general']
-        filas = hoja.iter_rows(values_only=True)
-        encabezado = [str(v) for v in next(filas)]
+        # El detalle que no entra en una hoja sigue en "Conciliación general (2)"…: se leen todas, en orden.
+        hojas = [h for h in libro.worksheets if h.title.startswith('Conciliación general')]
+        encabezado = [str(v) for v in next(hojas[0].iter_rows(values_only=True))]
+
+        def recorrer():
+            for h in hojas:
+                filas_hoja = h.iter_rows(values_only=True)
+                next(filas_hoja, None)
+                yield from filas_hoja
+        filas = recorrer()
         numericas = {'Saldo SGA', 'Saldo ERP', 'Diferencia SGA menos ERP', 'Filas SGA', 'Filas ERP'}
         cantidad = 0
         for i, x in enumerate(filas, 2):

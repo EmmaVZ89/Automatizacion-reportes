@@ -117,10 +117,11 @@ class Trabajos:
     def _escribir_registro(self, archivo, texto):
         if not archivo:
             return
+        hora = time.strftime('%H:%M:%S', time.localtime(self.ahora()))  # en el registro, cuánto tardó cada paso
         with self._lock_registro:
             try:
                 with archivo.open('a', encoding='utf-8') as f:
-                    f.write(texto + '\n')
+                    f.write(f'{hora} {texto}\n')
             except OSError:
                 pass
 

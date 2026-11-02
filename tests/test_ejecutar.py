@@ -59,6 +59,22 @@ class EjecutarTests(unittest.TestCase):
         status, _, cuerpo = self.c.post(f'/api/ejecuciones/{e["id"]}/ejecutar', {})
         self.assertEqual(status, 409)
 
+    def test_descargar_el_registro_de_la_corrida(self):
+        e = self._correr_falso()
+        status, cabeceras, cuerpo = self.c.get(f'/api/ejecuciones/{e["id"]}/registro/descargar')
+        self.assertEqual(status, 200)
+        self.assertIn('attachment', cabeceras.get('Content-Disposition', ''))
+        self.assertIn('Registro', cabeceras.get('Content-Disposition', ''))
+        texto = cuerpo.decode('utf-8')
+        self.assertIn('Registro de la corrida', texto)
+        self.assertIn('Cierre:    octubre 2026 (corte 31/10/2026)', texto)
+        self.assertIn('Versión:   1', texto)
+        self.assertIn('Estado:    Terminó bien', texto)
+        self.assertRegex(texto, '  [0-9]{2}:[0-9]{2}:[0-9]{2} Reconocí 3 archivos')  # la hora de cada línea
+        self.assertNotIn('sesion_chrome', texto)
+        status, _, _ = self.c.get('/api/ejecuciones/no-existe/registro/descargar')
+        self.assertEqual(status, 404)
+
     def test_entradas_incompletas_400_llano(self):
         _, _, e = self.c.post('/api/ejecuciones', {'cierre': self.cierre['id'], 'reporte': 'control_mora'})
         status, _, cuerpo = self.c.post(f'/api/ejecuciones/{e["id"]}/ejecutar', {'entradas': {}, 'parametros': {}})

@@ -491,5 +491,81 @@ class ReglasV15Tests(unittest.TestCase):
                 self.assertGreaterEqual(explicadas['abiertos_coincide'], 2)
 
 
+class HojasDeContinuacionTests(unittest.TestCase):
+    """Un detalle con más comprobantes de los que entran en una hoja de Excel sigue en otras (ERP completo cortado
+    por fechas: más de 1.048.575 comprobantes, 02/11/2026). Se prueba con el límite achicado."""
+
+    def test_detalle_que_no_entra_en_una_hoja_sigue_en_otra(self):
+        from unittest import mock
+        from app.reportes.conciliacion_general import excel
+        sys.path.insert(0, str(RAIZ / 'herramientas'))
+        import cambios_conciliacion
+        with carpeta_temporal() as d:
+            sga = xlsx_sintetico(d / 'sga.xlsx', [('Datos', SGA_FILAS)])
+            erp = xlsx_sintetico(d / 'erp.xlsx', [('Datos', [E] + ERP_FILAS)])
+            with mock.patch.object(excel, 'MAX_FILAS', 4):  # encabezado + 3 comprobantes por hoja
+                resumen = correr({'sga': [sga], 'erp': [erp]}, d / 'salida', alcance='completo')
+            total = resumen['registros_datos']
+            self.assertEqual(total, 8)
+            xlsx = d / 'salida' / 'Conciliacion_general.xlsx'
+            hojas = dict(leer_hojas(xlsx))
+            nombres = [n for n in hojas if n.startswith('Conciliación')]
+            self.assertEqual(nombres, ['Conciliación_general', 'Conciliación_general_(2)', 'Conciliación_general_(3)'])
+            # El Resumen (una fila por control y alerta) también sigue en otras hojas, antes del detalle.
+            resumen_hojas = list(hojas)[:list(hojas).index(nombres[0])]
+            self.assertEqual(resumen_hojas[:2], ['Resumen', 'Resumen_(2)'])
+            self.assertTrue(all(hojas[n][0] == ['Control', 'Saldo SGA', 'Saldo ERP', 'Diferencia', 'Resultado / cantidad', 'Detalle'] for n in resumen_hojas))
+            controles = [f for f in filas_csv(d / 'salida' / 'Respaldo_tecnico' / 'Conciliacion_general.csv') if f[0] == 'CONTROL']
+            self.assertEqual(sum(len(hojas[n]) - 1 for n in resumen_hojas), len(controles))
+            cabecera = filas_csv(d / 'salida' / 'Respaldo_tecnico' / 'Conciliacion_general.csv')[0]
+            detalle = [hojas[n] for n in nombres]
+            self.assertTrue(all(h[0] == cabecera for h in detalle))
+            self.assertEqual([len(h) - 1 for h in detalle], [3, 3, 2])
+            self.assertEqual(cambios_conciliacion.xlsx_consistente(xlsx, d / 'salida' / 'Respaldo_tecnico' / 'Conciliacion_general.csv'), [])
+
+    def test_con_el_limite_real_sigue_en_dos_hojas(self):
+        with carpeta_temporal() as d:
+            sga = xlsx_sintetico(d / 'sga.xlsx', [('Datos', SGA_FILAS)])
+            erp = xlsx_sintetico(d / 'erp.xlsx', [('Datos', [E] + ERP_FILAS)])
+            correr({'sga': [sga], 'erp': [erp]}, d / 'salida')
+            self.assertEqual([n for n, _ in leer_hojas(d / 'salida' / 'Conciliacion_general.xlsx')], ['Resumen', 'Conciliación_general'])
+
+
+class DetalleDeLecturaTests(unittest.TestCase):
+    """El registro de la corrida dice qué se tomó de cada archivo (filas y fechas) y cuántos comprobantes salieron,
+    termine bien o con error."""
+
+    def _correr(self, d, erp_filas, fondo=FONDO):
+        sga = xlsx_sintetico(d / 'sga.xlsx', [('Datos', SGA_FILAS)])
+        erp = xlsx_sintetico(d / 'erp.xlsx', [('Datos', [E] + erp_filas)])
+        (d / 'parametros.json').write_text(json.dumps({'alcance': 'completo', 'corte': '2026-10-31', 'fondo': fondo}), encoding='utf-8')
+        (d / 'entradas.json').write_text(json.dumps({'sga': [{'ruta': str(sga), 'nombre': 'sga.xlsx'}], 'erp': [{'ruta': str(erp), 'nombre': 'erp.xlsx'}]}), encoding='utf-8')
+        proceso = subprocess.run([sys.executable, '-I', str(EJECUTAR), '--trabajo', str(d)], capture_output=True, text=True, encoding='utf-8', env=dict(os.environ, REPORTES_PROTOCOLO='1'))
+        eventos = [json.loads(x) for x in proceso.stdout.splitlines() if x.strip()]
+        return proceso, eventos, [ev['m'] for ev in eventos if ev['t'] == 'log']
+
+    def test_al_terminar_bien(self):
+        with carpeta_temporal() as d:
+            proceso, _, lineas = self._correr(d, ERP_FILAS)
+            self.assertEqual(proceso.returncode, 0, proceso.stderr)
+            inicio = lineas.index('Detalle de la lectura:')
+            self.assertEqual(lineas[inicio + 1], '  SGA sga.xlsx [Datos]: 9 filas, 8 tomadas, sin fechas')
+            self.assertEqual(lineas[inicio + 2], '  ERP erp.xlsx [Datos]: 6 filas tomadas, sin fechas (Cliente 3, Pago 2, Diario general 1)')
+            self.assertIn('  Comprobantes de la conciliación: 8', lineas)
+            self.assertTrue(any(x.startswith('  Resultado COINCIDE: ') for x in lineas))
+
+    def test_con_error_despues_de_leer(self):
+        with carpeta_temporal() as d:
+            de_santa_fe = [['80', '1', 'F1', '', '', 'SaFe-1', 'Cliente'], ['30', '2', 'F3', '', '', 'SaFe-2', 'Cliente']]
+            proceso, eventos, lineas = self._correr(d, de_santa_fe)
+            self.assertEqual(proceso.returncode, 1)
+            self.assertIn('FERF Prov. Santa Fe', next(ev['m'] for ev in eventos if ev['t'] == 'error'))
+            self.assertIn('  SGA sga.xlsx [Datos]: 8 filas tomadas, sin fechas', lineas)
+            self.assertIn('  ERP erp.xlsx [Datos]: 2 filas tomadas, sin fechas', lineas)
+            # el detalle va antes del error
+            tipos = [ev['t'] for ev in eventos]
+            self.assertLess(max(i for i, ev in enumerate(eventos) if ev['t'] == 'log' and 'filas tomadas' in ev['m']), tipos.index('error'))
+
+
 if __name__ == '__main__':
     unittest.main()
