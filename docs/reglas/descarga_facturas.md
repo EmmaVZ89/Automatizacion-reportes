@@ -70,8 +70,12 @@ lectura de PDF) y una pausa durante la ejecución para iniciar sesión en Chrome
 - Concepto: en cada página con los encabezados `Concepto` y `Operación`, cada ítem es un renglón con `n/m` en la
   columna Operación. Su concepto es el texto a la izquierda de esa columna hasta el ítem siguiente o, en el último,
   hasta el primer rótulo `Subtotal:` o `Total:` (sin distinguir mayúsculas): la factura A cierra los ítems con
-  `SubTotal:`; la B no lo tiene y los cierra con `TOTAL:`. Si una página tiene ítems y ninguno de los dos rótulos,
-  no se sabe dónde termina el último ítem y la factura queda sin concepto (`Para revisar`).
+  `SubTotal:`; la B no lo tiene y los cierra con `TOTAL:`. Con muchos ítems, los rótulos pasan a una página
+  siguiente, que no repite los encabezados: el último ítem de la página termina entonces a 120 pt del pie, como en
+  el legado. Si ni esa página ni las siguientes tienen alguno de los dos rótulos, no se sabe dónde termina el último
+  ítem y la factura queda sin concepto (`Para revisar`).
+  *Corrección (2026.11.03.2):* la 2026.11.03 buscaba el rótulo sólo en la página de los ítems y mandaba a
+  `Para revisar` las facturas de varias páginas.
   *Cambio sobre el legado (2026.11.03):* el legado cortaba sólo en `Subtotal:` y, sin él, estiraba el último ítem
   hasta 120 pt del pie de la página. En la factura B se llevaba el importe en letras (`***…***`, que en el nombre de
   la carpeta queda `---…`) y cada factura caía en una carpeta propia.

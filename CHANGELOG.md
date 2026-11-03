@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026.11.03.2
+
+- Descarga de facturas: desde la 2026.11.03, las facturas con tantos ítems que el *SubTotal* y el *TOTAL* pasan a la
+  hoja siguiente iban a *Para revisar*. Ahora van a la carpeta de su concepto. Si descargaste con la 2026.11.03,
+  borrá la carpeta *Para revisar* y volvé a descargar.
+
 ## 2026.11.03
 
 - **Descarga de facturas, una carpeta por concepto:** los PDF se guardan en *carpeta destino / concepto*, con las

@@ -19,10 +19,12 @@ def read_pdf(data):
     dates, concepts = set(), set()
     sin_corte = False
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for page in pdf.pages:
+        hojas = [(page, page.extract_words()) for page in pdf.pages]
+        # Hojas que tienen el rótulo de cierre: con muchos ítems, el SubTotal/TOTAL pasa a la hoja siguiente.
+        cierres = [any(w['text'].lower() in ('subtotal:', 'total:') for w in words) for _, words in hojas]
+        for n, (page, words) in enumerate(hojas):
             text = page.extract_text() or ''
             dates.update(re.findall(r'Fecha de Emisi[oó]n:\s*(\d{2}/\d{2}/\d{4})', text, re.I))
-            words = page.extract_words()
             heads = [w for w in words if w['text'] == 'Concepto']
             ops = [w for w in words if w['text'] in ('Operación', 'Operacion')]
             if not heads or not ops:
@@ -37,8 +39,9 @@ def read_pdf(data):
                              and re.fullmatch(r'\d+/\d+', w['text'])})
             if not starts:
                 continue
-            if not stops:
-                # Sin rótulo no se sabe dónde termina el último ítem (se llevaría el importe en letras): a «Para revisar».
+            if not stops and not any(cierres[n + 1:]):
+                # Sin rótulo en ninguna hoja no se sabe dónde termina el último ítem (se llevaría el importe en
+                # letras): a «Para revisar». Si cierra en una hoja posterior, esta hoja termina al pie, como el legado.
                 sin_corte = True
                 continue
             for a, b in zip(starts, starts[1:] + [bottom]):

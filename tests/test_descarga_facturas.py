@@ -52,17 +52,26 @@ class Informar:
 # --- PDF mínimo escrito a mano (Helvetica, sin compresión) que pdfplumber lee con extract_words ---
 
 def _pdf_minimo(lineas):
+    return _pdf_hojas([lineas])
+
+
+def _pdf_hojas(hojas):
+    """PDF con una hoja por cada lista de renglones (x, y, texto)."""
     def esc(t):
         return t.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
-    contenido = 'BT /F1 10 Tf\n' + '\n'.join(f'1 0 0 1 {x} {y} Tm ({esc(t)}) Tj' for x, y, t in lineas) + '\nET\n'
-    cont = contenido.encode('latin-1')
     objetos = [
         b'<< /Type /Catalog /Pages 2 0 R >>',
-        b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+        b'<< /Type /Pages /Kids [' + b' '.join(f'{4 + 2 * i} 0 R'.encode() for i in range(len(hojas))) + b'] /Count '
+        + str(len(hojas)).encode() + b' >>',
         b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-        b'<< /Length ' + str(len(cont)).encode() + b' >>\nstream\n' + cont + b'endstream',
     ]
+    for i, lineas in enumerate(hojas):
+        contenido = 'BT /F1 10 Tf\n' + '\n'.join(f'1 0 0 1 {x} {y} Tm ({esc(t)}) Tj' for x, y, t in lineas) + '\nET\n'
+        cont = contenido.encode('latin-1')
+        objetos += [
+            f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {5 + 2 * i} 0 R >>'.encode(),
+            b'<< /Length ' + str(len(cont)).encode() + b' >>\nstream\n' + cont + b'endstream',
+        ]
     out = io.BytesIO()
     out.write(b'%PDF-1.4\n')
     offsets = []
@@ -260,6 +269,17 @@ def _factura_b(totales):
     return _pdf_minimo(lineas + [(450, 510, 'Notas:'), (50, 490, IMPORTE_EN_LETRAS)])
 
 
+def _factura_dos_hojas(rotulos_hoja_2):
+    """Tantos ítems que los rótulos de `rotulos_hoja_2` y el importe en letras pasan a la hoja 2, que no repite el
+    encabezado Concepto/Operación. Cada ítem repite el concepto en dos renglones."""
+    cabecera = [(50, 740, 'Fecha de Emisión: 06/06/2024'), (50, 700, 'FC-A000000000009')]
+    hoja_1 = cabecera + [(50, 650, 'Concepto'), (400, 650, 'Operación')]
+    for i in range(1, 4):
+        hoja_1 += [(50, 650 - 30 * i, 'Comision aval'), (400, 650 - 30 * i, f'1/{i}'), (50, 639 - 30 * i, '- propio.')]
+    hoja_2 = cabecera + [(450, 600 - 20 * i, t) for i, t in enumerate(rotulos_hoja_2)] + [(50, 540, IMPORTE_EN_LETRAS)]
+    return _pdf_hojas([hoja_1, hoja_2])
+
+
 @unittest.skipUnless(HAY_PDFPLUMBER, 'pdfplumber no está instalado en este intérprete (se corre dentro del .venv de facturas o con py -3.12)')
 class LecturaDelConcepto(unittest.TestCase):
     def test_factura_sin_subtotal_corta_el_concepto_en_total(self):
@@ -272,6 +292,17 @@ class LecturaDelConcepto(unittest.TestCase):
         """Sin rótulo no se sabe dónde termina el último ítem: la factura va a «Para revisar» en vez de llevarse el
         importe en letras al concepto."""
         self.assertEqual(sharepoint.read_pdf(_factura_b([])), (date(2026, 10, 15), []))
+
+    def test_factura_de_dos_hojas_con_los_rotulos_en_la_segunda(self):
+        """Con muchos ítems, el SubTotal y el TOTAL pasan a la hoja 2: el último ítem de la hoja 1 termina al pie."""
+        self.assertEqual(sharepoint.read_pdf(_factura_dos_hojas(['SubTotal:', 'TOTAL:'])),
+                         (date(2024, 6, 6), ['Comision aval - propio']))
+
+    def test_factura_b_de_dos_hojas_con_total_en_la_segunda(self):
+        self.assertEqual(sharepoint.read_pdf(_factura_dos_hojas(['TOTAL:']))[1], ['Comision aval - propio'])
+
+    def test_dos_hojas_sin_rotulo_en_ninguna_no_hay_concepto(self):
+        self.assertEqual(sharepoint.read_pdf(_factura_dos_hojas([])), (date(2024, 6, 6), []))
 
 
 @unittest.skipUnless(HAY_PDFPLUMBER, 'pdfplumber no está instalado en este intérprete (se corre dentro del .venv de facturas o con py -3.12)')

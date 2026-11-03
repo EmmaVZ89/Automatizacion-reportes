@@ -76,6 +76,9 @@ Nada de esto se corrigió: el motor hace lo mismo que el legado.
 - `read_pdf` exige exactamente una "Fecha de Emisión" en todo el PDF; un comprobante de varias páginas que la repita en cada
   página da "No se pudo identificar una única fecha de emisión" (es el mismo dato, pero el conjunto tiene un solo valor, así
   que en la práctica sólo falla si las fechas difieren o si no está).
+- Si los ítems de una factura siguen en una página que no repite los encabezados `Concepto` y `Operación`, los de esa
+  página no se leen (igual que el legado): el concepto sale sólo de las páginas con encabezado. En la factura de dos
+  páginas que se vio (11 ítems, 2026.11.03.2), la segunda trae sólo los totales.
 - La fila "Otro concepto" se decide con `normalize` (sin acentos ni espacios) en la v6, mientras que la v5 usaba `casefold`
   sobre el texto crudo. Se mantuvo la v6.
 - El estado `Fuera del período` deja `Detalle` vacío y no informa en qué mes cayó; el CSV sí trae `FechaEmisionPDF`.
