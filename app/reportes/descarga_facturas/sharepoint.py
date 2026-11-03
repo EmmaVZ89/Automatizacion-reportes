@@ -17,6 +17,7 @@ from .._comun import protocolo
 def read_pdf(data):
     import pdfplumber
     dates, concepts = set(), set()
+    sin_corte = False
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         for page in pdf.pages:
             text = page.extract_text() or ''
@@ -28,12 +29,17 @@ def read_pdf(data):
                 continue
             top = heads[0]['bottom'] + 2
             right = ops[0]['x0'] - 5
-            stops = [w['top'] for w in words if w['top'] > top and w['text'].lower() == 'subtotal:']
+            # La factura A cierra los ítems con «SubTotal:»; la B no lo tiene y los cierra con «TOTAL:».
+            stops = [w['top'] for w in words if w['top'] > top and w['text'].lower() in ('subtotal:', 'total:')]
             bottom = min(stops) if stops else page.height - 120
             starts = sorted({round(w['top'], 1) for w in words
                              if top < w['top'] < bottom and right < w['x0'] < right + 100
                              and re.fullmatch(r'\d+/\d+', w['text'])})
             if not starts:
+                continue
+            if not stops:
+                # Sin rótulo no se sabe dónde termina el último ítem (se llevaría el importe en letras): a «Para revisar».
+                sin_corte = True
                 continue
             for a, b in zip(starts, starts[1:] + [bottom]):
                 selected = [w for w in words if w['x0'] < right and a - 3 <= w['top'] < b - 3]
@@ -43,7 +49,7 @@ def read_pdf(data):
                     concepts.add(concept)
     if len(dates) != 1:
         raise ValueError('No se pudo identificar una única fecha de emisión')
-    return datetime.strptime(dates.pop(), '%d/%m/%Y').date(), sorted(concepts)
+    return datetime.strptime(dates.pop(), '%d/%m/%Y').date(), [] if sin_corte else sorted(concepts)
 
 
 def texto_pdf(data):

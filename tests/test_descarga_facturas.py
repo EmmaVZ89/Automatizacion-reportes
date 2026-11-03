@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 
 from app.reportes.descarga_facturas import motor, sharepoint
@@ -247,18 +248,44 @@ class Validaciones(unittest.TestCase):
                               cwd=str(cwd), env=entorno, input=entrada, capture_output=True, text=True, encoding='utf-8', timeout=120)
 
 
+IMPORTE_EN_LETRAS = '***CIENTO CUATRO MIL CON DIEZ CENTAVOS***'
+
+
+def _factura_b(totales):
+    """Factura B: debajo del ítem van la percepción, los rótulos de `totales` (a la derecha) y el importe en letras."""
+    lineas = [(50, 740, 'Fecha de Emisión: 15/10/2026'), (50, 700, 'FC-B000000000001'),
+              (50, 650, 'Concepto'), (400, 650, 'Operación'), (50, 620, 'Servicio mensual'), (400, 620, '1/1'),
+              (450, 590, 'Percepción IIBB')]
+    lineas += [(450, 570 - 20 * i, t) for i, t in enumerate(totales)]
+    return _pdf_minimo(lineas + [(450, 510, 'Notas:'), (50, 490, IMPORTE_EN_LETRAS)])
+
+
+@unittest.skipUnless(HAY_PDFPLUMBER, 'pdfplumber no está instalado en este intérprete (se corre dentro del .venv de facturas o con py -3.12)')
+class LecturaDelConcepto(unittest.TestCase):
+    def test_factura_sin_subtotal_corta_el_concepto_en_total(self):
+        self.assertEqual(sharepoint.read_pdf(_factura_b(['TOTAL:'])), (date(2026, 10, 15), ['Servicio mensual']))
+
+    def test_corta_en_el_primer_rotulo_de_subtotal_o_total(self):
+        self.assertEqual(sharepoint.read_pdf(_factura_b(['SubTotal:', 'TOTAL:']))[1], ['Servicio mensual'])
+
+    def test_sin_subtotal_ni_total_no_hay_concepto(self):
+        """Sin rótulo no se sabe dónde termina el último ítem: la factura va a «Para revisar» en vez de llevarse el
+        importe en letras al concepto."""
+        self.assertEqual(sharepoint.read_pdf(_factura_b([])), (date(2026, 10, 15), []))
+
+
 @unittest.skipUnless(HAY_PDFPLUMBER, 'pdfplumber no está instalado en este intérprete (se corre dentro del .venv de facturas o con py -3.12)')
 class EjecucionSimulada(unittest.TestCase):
     def _preparar(self, d):
         pdfs = _biblioteca_simulada(d / 'pdfs')
         destino = d / 'destino'
         # Conflicto: mismo nombre con otro contenido. Ya existía: mismo contenido.
-        (destino / '2026-10' / 'Servicio mensual').mkdir(parents=True)
-        (destino / '2026-10' / 'Servicio mensual' / 'FC-A000000000004.pdf').write_bytes(b'%PDF-otro contenido')
-        (destino / '2026-10' / 'Servicio mensual' / 'FC-A000000000005.pdf').write_bytes(pdfs[('27111111111', 'FC-A000000000005')])
+        (destino / 'Servicio mensual').mkdir(parents=True)
+        (destino / 'Servicio mensual' / 'FC-A000000000004.pdf').write_bytes(b'%PDF-otro contenido')
+        (destino / 'Servicio mensual' / 'FC-A000000000005.pdf').write_bytes(pdfs[('27111111111', 'FC-A000000000005')])
         return destino
 
-    def test_ejecutar_simulado_clasifica_en_anio_mes_concepto_y_conflicto(self):
+    def test_ejecutar_simulado_clasifica_por_concepto_y_conflicto(self):
         with carpeta_temporal() as d:
             destino = self._preparar(d)
             p = _listado_simple(d / 'listado.xlsx')
@@ -280,7 +307,7 @@ class EjecucionSimulada(unittest.TestCase):
 
             f = por_numero['FC-A002100588517']
             self.assertEqual(f[2:5], ['12/10/2026', 'Servicio mensual', 'Copiada'])
-            self.assertEqual(Path(f[5]), destino / '2026-10' / 'Servicio mensual' / 'FC-A002100588517.pdf')
+            self.assertEqual(Path(f[5]), destino / 'Servicio mensual' / 'FC-A002100588517.pdf')
             self.assertEqual(f[6], 'listado.xlsx / Hoja1 / fila 2')
             self.assertTrue(Path(f[5]).exists())
 
@@ -310,6 +337,8 @@ class EjecucionSimulada(unittest.TestCase):
                 'estados': {'Copiada': 2, 'Fuera del período': 1, 'REVISAR: concepto no identificado': 1,
                             'CONFLICTO: no se reemplazó': 1, 'Ya existía': 1, 'ERROR': 2, 'Otro concepto': 1}})
             self.assertEqual(_leer_csv(d / 'salidas' / 'entrada_a_revisar.csv'), [motor.COLUMNAS_REVISAR])
+            # Sólo carpetas de concepto, sin la del mes de emisión: los meses se juntan en la carpeta del concepto.
+            self.assertEqual(sorted(c.name for c in destino.iterdir()), ['Para revisar', 'Servicio mensual', 'Varios conceptos'])
 
     def test_ejecutar_py_contrato_completo_con_simulacion(self):
         with carpeta_temporal() as d:
@@ -365,7 +394,7 @@ class EjecucionSimulada(unittest.TestCase):
             r = Validaciones._correr(trabajo, d, simular=d / 'pdfs', entrada='{"t":"cancelar"}\n')
             self.assertEqual(r.returncode, 2, r.stderr + r.stdout)
             self.assertEqual(_leer_csv(trabajo / 'salidas' / 'descarga.csv'), [motor.COLUMNAS_DESCARGA])
-            self.assertFalse((destino / '2026-10' / 'Servicio mensual' / 'FC-A002100588517.pdf').exists())
+            self.assertFalse((destino / 'Servicio mensual' / 'FC-A002100588517.pdf').exists())
 
 
 if __name__ == '__main__':

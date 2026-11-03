@@ -182,8 +182,9 @@ depósito de cada cheque con diferencia de estado, para pedir que corrijan el es
 pueden llamarse de distintas maneras y estar en cualquier lugar). En Opciones, la primera vez, cargás
 la dirección de la biblioteca de comprobantes y la carpeta de tu PC donde van los PDF; después quedan
 guardadas. Durante la ejecución se abre Chrome: iniciá sesión, esperá a ver la biblioteca
-Comprobantes, volvé a la herramienta y apretá **Continuar**. Los PDF se guardan por mes y concepto
-(leídos de adentro de cada factura). Devuelve una tabla con el resultado de cada factura (Copiada, Ya
+Comprobantes, volvé a la herramienta y apretá **Continuar**. Los PDF se guardan en una carpeta por
+concepto (leído de adentro de cada factura), con todos los meses juntos; si no se puede leer el concepto, van a
+*Para revisar*. Devuelve una tabla con el resultado de cada factura (Copiada, Ya
 existía, ERROR, Fuera del período…) y otra con las filas del listado que no se pudieron usar. Cada
 descarga queda registrada en la sección Facturas.
 

@@ -1,5 +1,13 @@
 # Novedades
 
+## 2026.11.03
+
+- **Descarga de facturas, una carpeta por concepto:** los PDF se guardan en *carpeta destino / concepto*, con las
+  facturas de todos los meses juntas. Ya no se crea la carpeta del mes (por ejemplo *2026-10*).
+- Descarga de facturas: en las facturas B, que no tienen renglón de *SubTotal*, el concepto se llevaba el importe en
+  letras y cada factura quedaba en una carpeta propia (el nombre del concepto seguido de *---* y el importe). Ahora el
+  concepto termina en *SubTotal:* o en *TOTAL:*, y una factura que no tenga ninguno de los dos va a *Para revisar*.
+
 ## 2026.11.02
 
 - **Conciliación general con el ERP completo de muchos años:** cuando los comprobantes no entran en una hoja de

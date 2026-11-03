@@ -190,7 +190,7 @@ def ejecutar(listados, salida, parametros, informar=protocolo, fabrica_navegador
                     status, detail = 'Otro concepto', ''
                 else:
                     category = concepts[0] if len(concepts) == 1 else ('Varios conceptos' if concepts else 'Para revisar')
-                    target = dest / emitted.strftime('%Y-%m') / core.safe_name(category) / (number + '.pdf')
+                    target = dest / core.safe_name(category) / (number + '.pdf')
                     target.parent.mkdir(parents=True, exist_ok=True)
                     if target.exists():
                         status = 'Ya existía' if target.read_bytes() == data else 'CONFLICTO: no se reemplazó'

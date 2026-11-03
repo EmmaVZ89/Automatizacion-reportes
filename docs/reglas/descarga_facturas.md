@@ -9,7 +9,7 @@ PDF, nombre seguro, espera de la biblioteca, pedido con sesión). Mismo comporta
 
 A partir de uno o más listados Excel con CUIT y número de factura, descarga el PDF de cada factura desde
 la biblioteca de comprobantes de la organización (SharePoint, con la sesión de Chrome de la usuaria) y lo
-guarda en una carpeta local organizada por mes de emisión y concepto, ambos leídos **dentro del PDF**.
+guarda en una carpeta local, una carpeta por concepto. La fecha de emisión y el concepto se leen **dentro del PDF**.
 No recorre la biblioteca: construye la dirección directa de cada archivo con el CUIT y el número. Si una
 factura no está en esa ubicación, lo informa y sigue con las demás.
 
@@ -67,6 +67,14 @@ lectura de PDF) y una pausa durante la ejecución para iniciar sesión en Chrome
   dentro del PDF").
 - Del PDF se leen la **fecha de emisión** (tiene que haber exactamente una "Fecha de Emisión") y los
   **conceptos**. Ni la fecha ni el concepto se toman del Excel.
+- Concepto: en cada página con los encabezados `Concepto` y `Operación`, cada ítem es un renglón con `n/m` en la
+  columna Operación. Su concepto es el texto a la izquierda de esa columna hasta el ítem siguiente o, en el último,
+  hasta el primer rótulo `Subtotal:` o `Total:` (sin distinguir mayúsculas): la factura A cierra los ítems con
+  `SubTotal:`; la B no lo tiene y los cierra con `TOTAL:`. Si una página tiene ítems y ninguno de los dos rótulos,
+  no se sabe dónde termina el último ítem y la factura queda sin concepto (`Para revisar`).
+  *Cambio sobre el legado (2026.11.03):* el legado cortaba sólo en `Subtotal:` y, sin él, estiraba el último ítem
+  hasta 120 pt del pie de la página. En la factura B se llevaba el importe en letras (`***…***`, que en el nombre de
+  la carpeta queda `---…`) y cada factura caía en una carpeta propia.
 
 ### Filtros y destino
 
@@ -80,9 +88,11 @@ lectura de PDF) y una pausa durante la ejecución para iniciar sesión en Chrome
 | Ya existía con **otro** contenido | `CONFLICTO: no se reemplazó` | ruta (no se sobrescribe) |
 | Cualquier error (no está en la biblioteca, no es PDF, fecha no identificable, sin sesión…) | `ERROR` | mensaje |
 
-- Destino: `<destino>/AAAA-MM/<concepto>/<número>.pdf`, con `AAAA-MM` del mes de emisión. Si el PDF
-  tiene más de un concepto, la carpeta es `Varios conceptos`; si no tiene ninguno, `Para revisar`. El
-  nombre de carpeta se sanea (caracteres no válidos reemplazados).
+- Destino: `<destino>/<concepto>/<número>.pdf`: una carpeta por concepto, con las facturas de todos los meses
+  juntas (*cambio sobre el legado, 2026.11.03:* el legado agregaba antes la carpeta `AAAA-MM` del mes de
+  emisión, `<destino>/AAAA-MM/<concepto>/`). Si el PDF tiene más de un concepto, la carpeta es `Varios
+  conceptos`; si no tiene ninguno, `Para revisar`. El nombre de carpeta se sanea (caracteres no válidos
+  reemplazados).
 - Los originales no se modifican. La subida a la biblioteca de destino la hace OneDrive si está
   sincronizando esa carpeta; la herramienta no sube nada.
 
@@ -93,7 +103,7 @@ lectura de PDF) y una pausa durante la ejecución para iniciar sesión en Chrome
 | `origen` | Dirección de SharePoint de la organización | (obligatorio; se pide la primera vez y se guarda en la configuración local) | Origen de todas las direcciones; sólo se aceptan pedidos a ese origen |
 | `sitio` | Ruta del sitio | `/sites/DynamicsERP` | No interviene en la descarga (herencia de la v5; se devuelve en el resultado) |
 | `biblioteca` | Ruta de la biblioteca Comprobantes | `/sites/DynamicsERP/GTZ/Comprobantes` | Carpeta base: `<biblioteca>/<CUIT>/<número>.pdf` |
-| `destino` | Carpeta destino en esta PC | (obligatorio; se guarda) | Dónde se crean `AAAA-MM/concepto/` |
+| `destino` | Carpeta destino en esta PC | (obligatorio; se guarda) | Dónde se crea una carpeta por concepto |
 | `desde` | Emisión desde | vacío (no se persiste) | Filtro por fecha de emisión leída del PDF |
 | `hasta` | Emisión hasta | vacío (no se persiste) | Ídem |
 | `concepto` | Concepto a buscar | vacío = todos (no se persiste) | Filtro por concepto leído del PDF |
@@ -132,8 +142,9 @@ usuaria: nunca se comparte ni va al repositorio.
   normalización de CUIT (11 dígitos, sin inventar) y de número (expresión `(FC|NC|ND)-[A-Z]\d{12,13}`),
   deduplicación por CUIT + número.
 - La construcción de la dirección del PDF y las dos verificaciones (es PDF; el número está en el texto).
-- Los textos de `Estado` y de `Motivo`, el criterio de carpeta (`AAAA-MM` / concepto / `Varios
-  conceptos` / `Para revisar`), y que nunca se sobrescribe un archivo distinto.
+- La lectura del concepto (dónde termina cada ítem: el siguiente, `Subtotal:` o `Total:`; sin rótulo, sin concepto).
+- Los textos de `Estado` y de `Motivo`, el criterio de carpeta (concepto / `Varios conceptos` / `Para revisar`,
+  sin carpeta por mes), y que nunca se sobrescribe un archivo distinto.
 - Las columnas y el orden de los dos CSV.
 
 Cualquier cambio en esto exige correr `herramientas/regresion_legado.py descarga_facturas` (con el
