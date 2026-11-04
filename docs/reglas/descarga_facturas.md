@@ -146,10 +146,14 @@ usuaria: nunca se comparte ni va al repositorio.
   normalización de CUIT (11 dígitos, sin inventar) y de número (expresión `(FC|NC|ND)-[A-Z]\d{12,13}`),
   deduplicación por CUIT + número.
 - La construcción de la dirección del PDF y las dos verificaciones (es PDF; el número está en el texto).
-- La lectura del concepto (dónde termina cada ítem: el siguiente, `Subtotal:` o `Total:`; sin rótulo, sin concepto).
+- La lectura del concepto (dónde termina cada ítem: el siguiente, `Subtotal:` o `Total:`, en su página o en una
+  siguiente; sin rótulo en ninguna página, sin concepto).
 - Los textos de `Estado` y de `Motivo`, el criterio de carpeta (concepto / `Varios conceptos` / `Para revisar`,
   sin carpeta por mes), y que nunca se sobrescribe un archivo distinto.
 - Las columnas y el orden de los dos CSV.
 
-Cualquier cambio en esto exige correr `herramientas/regresion_legado.py descarga_facturas` (con el
-navegador simulado sobre una carpeta de PDFs) y anotar el resultado en `docs/regresion.md`.
+Cualquier cambio en esto exige correr `.venv\Scripts\python.exe herramientas/regresion_facturas.py --pdfs <carpeta>`
+sobre PDF reales, con al menos uno de cada forma de factura que haya (A, B, de varias páginas; la que no tiene rótulo
+se cubre con tests), y anotar el resultado en `docs/regresion.md`. La herramienta compara la lectura de cada PDF con
+la del legado, explica las diferencias acordadas (las de 2026.11.03) y corre la descarga con el navegador simulado;
+sale con 1 si queda alguna diferencia sin explicar o un error.

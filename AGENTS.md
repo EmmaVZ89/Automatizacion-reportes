@@ -79,34 +79,11 @@ en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_tria
   `revisable: False` la vuelve informativa (totales, respaldos): se muestra aparte, sin selección ni columna de
   revisión, y no suma pendientes (`Dominio.tablas_informativas`).
 - `app/web/`: `index.html`, `estilos.css`, `app.js`. JS vainilla, sin build, **sin `innerHTML`**: todo se construye
-  con `el()`. Configuración es una ventana (`abrirConfiguracion(seccion)`; `#/configuracion` la abre sobre Inicio). El encabezado fijo del reporte, achicado, conserva su alto con margen (`fijarCabecera`): si la página se acortara, el navegador corregiría el scroll y temblaría. Dos temas por variables CSS (`[data-tema]`, **claro por defecto**), contraste ≥ 4,5:1 verificado por
-  test. Íconos: sprite SVG en `index.html` (`icono('i-…')`), nunca imágenes ni fuentes externas. Piezas comunes en
-  `app.js`: `dialogo()` (confirmaciones con tono), `abrirModal()`, `abrirMenu()`/`botonMenu()`, `aviso()` (avisos
-  con barra de tiempo), `abrirAyuda(clave)` (cajón de ayuda: `AYUDA_PASOS`, `AYUDA_GENERAL`), `bienvenida()` (guía
-  de inicio; `configuracion.bienvenida` recuerda que ya se vio) y `tareas` (visor de tareas: todo lo que tarda pasa
-  por `tareas.correr({clave, titulo})`, que avisa si la misma clave ya está en curso; las descargas, por
-  `descargar(ruta, titulo)`; los reportes y el Excel de origen llegan por los eventos `trabajo` y `origen`). Un `btn()`
-  cuya acción devuelve una promesa se marca solo como ocupado. Los redibujos que llegan por eventos van con
-  `enSilencio()` (sin animaciones de entrada). Las clases de tono de los diálogos llevan prefijo (`tono-aviso`): no
-  reusar nombres de clase de otros componentes (`.aviso` es la notificación). Sin saltos de maquetado: un bloque que se
-  vuelve a armar con datos que llegan después conserva su alto (`conservarAlto`, lo usa `grilla`); la vista toma su
-  ancho al pintarse (`pantallaNueva`), no al cambiar la dirección; `html` reserva la barra de desplazamiento; la grilla
-  tiene alto fijo; los estados elegidos no cambian el grosor de letra; los `<details>` se animan con
-  `::details-content`. Para medir, el patrón es un PerformanceObserver de `layout-shift` en Playwright
-  (`tests/test_web_estatico.py` fija los arreglos). Si el código de `app/` cambia con la
-  herramienta abierta, `/api/estado` devuelve `reiniciar` y la pantalla lo avisa. Inactividad: `_vigilar_inactividad`
-  cuenta como uso una pestaña conectada a `/api/eventos` (`bus.suscriptores`) y una copia de origen en curso; sólo
-  apaga sin pestañas. Si la pantalla pierde la conexión (`revisarConexion`: error del canal de eventos, un pedido que no
-  llega o un 403 de sesión vieja) muestra `#banda-conexion` e interrumpe las tareas de reportes y copias; al volver
-  (`reconectada`) las pone al día. Registro (`datos/servidor.log`, rotado): apertura con versión y pid, cierre con
-  `motivo_cierre`, sesión anterior sin cerrar (quedó `.servidor.json`), errores sin atrapar (`arranque.registrar_fallas`,
-  sólo en `python -m app.arranque`) y caídas del intérprete en `fallas.log` (faulthandler); `GET /api/registro` los
-  baja juntos. El aviso de versión nueva ofrece "Reiniciar la herramienta"
-  (también en el menú): `POST /api/reiniciar` → `Servidor.reiniciar` lanza `python -m app.arranque --reinicio TOKEN`
-  con el mismo token y puerto y se cierra; la instancia nueva espera a que se suelte el puerto, y la pantalla espera
-  a que `/api/estado` devuelva otra `instancia` y recarga. En Windows el puerto es exclusivo (`_ServidorHttp`). Las
-  animaciones van siempre, también con "reducir movimiento" del sistema: es una decisión del dueño del
-  repositorio.
+  con `el()`. Dos temas por variables CSS (claro por defecto), íconos en un sprite SVG, piezas comunes en `app.js`
+  (`dialogo`, `aviso`, `tareas.correr`, `descargar`…) y pantalla sin saltos de maquetado. Cómo está armada, las
+  prácticas y los criterios de pantalla: `docs/interfaz.md`.
+- La herramienta en marcha (aviso de código nuevo, inactividad, conexión perdida, `datos/servidor.log`, reinicio con
+  el mismo token y puerto, puerto exclusivo en Windows) y las prácticas del servidor: `docs/servidor.md`.
 
 ## Reglas de trabajo
 
@@ -115,8 +92,12 @@ en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_tria
    `py herramientas/regresion_legado.py <reporte> --entradas <carpeta con los archivos reales>` y anotar el resultado
    en `docs/regresion.md`. Con un solo archivo por entrada y parámetros por defecto, la salida tiene que ser
    **idéntica** a la del legado, salvo los cambios de reglas acordados con quien usa el reporte (hoy: Conciliación
-   general 1.5), que se documentan en `docs/reglas/<reporte>.md` y se verifican explicando cada diferencia
-   (`herramientas/cambios_conciliacion.py`). Las reglas de negocio de cada reporte están en `docs/reglas/<reporte>.md`.
+   general 1.5 y la lectura del concepto de la Descarga de facturas), que se documentan en `docs/reglas/<reporte>.md`
+   y se verifican explicando cada diferencia (`herramientas/cambios_conciliacion.py`). La Descarga de facturas no pasa
+   por `regresion_legado.py`: se compara con PDF reales con
+   `.venv\Scripts\python.exe herramientas/regresion_facturas.py --pdfs <carpeta>`, que lee cada PDF con el legado y
+   con el motor nuevo, explica las diferencias acordadas y corre la descarga con el navegador simulado. Las reglas de
+   negocio de cada reporte están en `docs/reglas/<reporte>.md`.
 2. **`datos/` nunca va al repositorio** (está en `.gitignore`): son datos reales de la usuaria. Tampoco `sesion_chrome/`.
 3. **Repositorio público**: ni URLs de SharePoint, ni nombres de personas u organizaciones, ni archivos de datos reales,
    ni cifras reales en `docs/`. Los fixtures de los tests son sintéticos. Lo que es de la organización (URL, carpeta
@@ -133,11 +114,33 @@ en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_tria
    `.agent/rules/<codigo>.md` + tests con dorados.
 8. **Tests**: `py -m unittest discover -s tests -t . -v` desde la raíz (o `Reportes de cierre - consola.bat pruebas`).
    Fixtures sintéticos (`tests/fixtures.py`), nunca datos reales. Los tests del server usan puertos 7390–7440 y
-   carpetas temporales en `tests/_tmp/`.
-9. **Commits y push los hace el dueño del repositorio.** Un agente deja los cambios en el working copy y los
-   describe. La versión vive en `app/version.py` (`AAAA.MM.DD`); todo cambio visible suma su línea en `CHANGELOG.md`.
+   carpetas temporales en `tests/_tmp/`. Con `py` se omiten (skipped) los tests que leen PDF, porque pdfplumber está
+   sólo en el `.venv` de facturas: un cambio en la Descarga de facturas o en `herramientas/regresion_facturas.py` se
+   prueba también con `.venv\Scripts\python.exe -m unittest discover -s tests -t .`, que no omite ninguno.
+9. **Commit y push, sólo cuando el dueño del repositorio lo pide.** Hasta entonces, un agente deja los cambios en el
+   working copy y los describe. El mensaje lleva un título corto y un cuerpo con qué cambió y por qué, la regresión
+   y los tests; si lo escribió un agente, termina con `Co-Authored-By`. Antes del push se revisa el diff: el
+   repositorio es público (regla 3). La versión vive en `app/version.py` (`AAAA.MM.DD`; una segunda versión del
+   mismo día suma `.2`, `.3`…, como `2026.11.03.2`); todo cambio visible suma su línea en `CHANGELOG.md`.
 10. Las correcciones pendientes de los motores (cosas raras heredadas del legado que no se arreglan sin acordarlo)
     están en `docs/pendientes.md`: se leen antes de "mejorar" algo.
+
+## Cómo se hace un cambio
+
+1. **Propuesta sin aplicar** cuando el pedido es un análisis o falta definir algo: qué cambiar, dónde y por qué. El
+   código no se toca hasta que se decide.
+2. **Decisión** del dueño del repositorio o de quien usa el reporte. Si cambia una regla de negocio, va a
+   `docs/reglas/<reporte>.md` como cambio sobre el legado, con la fecha.
+3. **Test que falla** con el caso, con datos sintéticos, y recién después el cambio.
+4. **Suite completa** con `py` y, si toca algo que lee PDF, también con el `.venv` (regla 8).
+5. **Regresión** contra el legado si toca un motor, anotada en `docs/regresion.md` (regla 1).
+6. **Documentación**: la regla del reporte; `docs/interfaz.md` o `docs/servidor.md` si cambia una práctica;
+   `docs/pendientes.md` para lo que se deja igual a propósito; `CHANGELOG.md` y `app/version.py` si se ve (regla 9).
+7. **Paquete** con `py herramientas/empaquetar.py` cuando hay que entregarlo.
+8. **Commit y push**, sólo cuando se pide (regla 9).
+
+Para editar archivos con un script, cada reemplazo se aplica sólo si el texto viejo aparece exactamente una vez
+(`assert texto.count(viejo) == 1`): si no coincide, el script se detiene en lugar de escribir algo roto.
 
 ## Comandos
 
@@ -145,6 +148,8 @@ en su tabla se busquen en las otras tablas del mismo libro (`Tablas.aplicar_tria
 py -m app.arranque --consola                       # abre la herramienta con consola
 py -m unittest discover -s tests -t . -v            # tests
 py herramientas/regresion_legado.py control_cheques --entradas <carpeta>
+.venv\Scripts\python.exe -m unittest discover -s tests -t .           # tests, también los que leen PDF
+.venv\Scripts\python.exe herramientas/regresion_facturas.py --pdfs <carpeta>
 py herramientas/empaquetar.py                       # dist/Reportes-de-cierre-<versión>.zip
 ```
 

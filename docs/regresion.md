@@ -2,7 +2,9 @@
 
 Cada motor nuevo se comparó con el script original (`legado/`) sobre los archivos reales de un cierre, con
 `herramientas/regresion_legado.py`. Se registran los archivos por SHA-256 y cantidad de filas, nunca importes.
-Un cambio en un motor exige repetir su fila. Desde la 1.5, la Conciliación general se compara contra el legado con las diferencias explicadas por sus cambios acordados (ver `docs/reglas/conciliacion_general.md`).
+Un cambio en un motor exige repetir su fila. La Descarga de facturas se compara con
+`herramientas/regresion_facturas.py` sobre PDF reales: se anotan el SHA-256 abreviado y las hojas de cada PDF, nunca
+conceptos ni importes. Desde la 1.5, la Conciliación general se compara contra el legado con las diferencias explicadas por sus cambios acordados (ver `docs/reglas/conciliacion_general.md`).
 
 | Fecha | Reporte | Entradas (nombre · SHA-256 abreviado · filas) | Parámetros | Legado | Nuevo | Resultado |
 |---|---|---|---|---|---|---|

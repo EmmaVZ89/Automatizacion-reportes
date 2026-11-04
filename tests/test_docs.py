@@ -42,6 +42,20 @@ class DocsTests(unittest.TestCase):
         for nombre in ('LEEME.md', 'AGENTS.md', 'CLAUDE.md', 'GEMINI.md', 'CHANGELOG.md', 'docs/regresion.md', 'docs/pendientes.md'):
             self.assertTrue((RAIZ / nombre).exists(), nombre)
 
+    def test_reglas_de_interfaz_y_de_servidor(self):
+        """Las prácticas viven en docs/ (las leen los tres agentes) y se cargan por ruta con la misma regla en
+        .claude y en .agent; AGENTS.md remite a las dos."""
+        agents = (RAIZ / 'AGENTS.md').read_text(encoding='utf-8')
+        for regla, doc in (('web', 'docs/interfaz.md'), ('servidor', 'docs/servidor.md')):
+            self.assertTrue((RAIZ / doc).exists(), doc)
+            self.assertIn(doc, agents)
+            claude = (RAIZ / '.claude' / 'rules' / f'{regla}.md').read_text(encoding='utf-8')
+            agent = (RAIZ / '.agent' / 'rules' / f'{regla}.md').read_text(encoding='utf-8')
+            self.assertRegex(claude, r'^---\ndescription: .+\npaths: \[')
+            self.assertRegex(agent, r'^---\ntrigger: glob\nglobs: \[')
+            self.assertIn(doc, claude)
+            self.assertEqual(claude.split('---\n', 2)[2], agent.split('---\n', 2)[2], f'{regla}: el cuerpo difiere')
+
     def test_sin_datos_de_la_organizacion(self):
         prohibidas = list(PROHIBIDAS_BASE)
         extra = RAIZ / 'tests' / 'palabras_prohibidas.txt'
